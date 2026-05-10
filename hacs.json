@@ -1,5 +1,5 @@
 {
   "name": "Gardena Mower BLE",
-  "render_readme": false,
+  "render_readme": true,
   "homeassistant": "2026.5.1"
 }
