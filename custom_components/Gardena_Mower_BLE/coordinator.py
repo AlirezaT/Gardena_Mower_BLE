@@ -69,6 +69,7 @@ class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
     async def _async_update_data(self) -> dict[str, str | int]:
         """Poll the device."""
         LOGGER.debug("Polling device")
+        LOGGER.debug("MOWER DATA: %s", data)
 
         data: dict[str, str | int] = {}
 
