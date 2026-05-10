@@ -2,6 +2,4 @@
   "name": "Gardena Mower BLE",
   "render_readme": false,
   "homeassistant": "2026.5.1",
-  "zip_release": true,
-  "filename": "Gardena_Mower_BLE.zip"
 }
