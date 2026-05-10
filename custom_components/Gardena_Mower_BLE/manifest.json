@@ -1,5 +1,5 @@
 {
-  "domain": "Gardena_Mower_BLE",
+  "domain": "gardena_mower_ble",
   "name": "Gardena Mower BLE",
   "bluetooth": [
     {
