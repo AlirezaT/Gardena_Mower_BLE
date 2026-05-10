@@ -1,3 +1,3 @@
-![Logo](https://github.com/AlirezaT/Gardena_Mower_BLE/blob/main/Gardena_Logo.png)
+![Logo](https://github.com/AlirezaT/Gardena_Mower_BLE/blob/main/logo.png)
 
 # Gardena_mower_BLE
