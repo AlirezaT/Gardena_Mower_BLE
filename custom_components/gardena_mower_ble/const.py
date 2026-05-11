@@ -2,7 +2,7 @@
 
 import logging
 
-DOMAIN = "gardena_mover_ble"
+DOMAIN = "gardena_mower_ble"
 MANUFACTURER = "Gardena"
 
 LOGGER = logging.getLogger(__package__)
