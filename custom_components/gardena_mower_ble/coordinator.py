@@ -1,6 +1,6 @@
 """Provides the DataUpdateCoordinator."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from automower_ble.mower import Mower
@@ -97,6 +97,42 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
             if data["state"] is None:
                 await self._async_find_device()
                 raise UpdateFailed("Error getting data from device")
+            
+            data["next_start_time"] = await self.mower.mower_next_start_time()
+            LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
+#            if data["next_start_time"] is None:
+#                await self._async_find_device()
+#                raise UpdateFailed("Error getting data from device")
+
+            data["errorCode"] = await self.mower.command("GetError")
+            LOGGER.debug("errorCode: " + str(data["errorCode"]))
+
+            data["NumberOfMessages"] = await self.mower.command("GetNumberOfMessages")
+            LOGGER.debug("NumberOfMessages: " + str(data["NumberOfMessages"]))
+
+            data["RemainingChargingTime"] = await self.mower.command("GetRemainingChargingTime")
+            LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
+
+            # workaround for issue21
+            try:
+                data["statistics"] = await self.mower.command("GetAllStatistics")
+                LOGGER.debug("statuses: " + str(data["statistics"]))
+            except ValueError as e:
+                if "Data length mismatch" in str(e):
+                    LOGGER.debug("Known fail on GetAllStatistics - skipping")
+                    data["statistics"] = None
+                else:
+                    raise  # Re-raise the exception if it's not the known ValueError
+
+            data["operatorstate"] = await self.mower.command("IsOperatorLoggedIn")
+            LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
+
+            data["last_message"] = await self.mower.command("GetMessage", messageId=0)
+            LOGGER.debug("last_message: " + str(data["last_message"]))
+
+            self._last_successful_update = datetime.now()
+            self._last_data = data
+
 
         except BleakError as err:
             LOGGER.error("Error getting data from device")
