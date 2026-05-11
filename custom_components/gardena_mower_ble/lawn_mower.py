@@ -130,7 +130,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             )
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
-        await self.mower.command("SetOverridePark")
+        await self.command("SetOverrideParkUntilNextStart")
         #  await self.coordinator.mower.mower_park()
         await self.coordinator.async_request_refresh()
 
