@@ -1,8 +1,8 @@
-"""Constants for the Husqvarna Automower Bluetooth integration."""
+"""Constants for the Gardena Automower Bluetooth integration."""
 
 import logging
 
-DOMAIN = "husqvarna_automower_ble"
-MANUFACTURER = "Husqvarna"
+DOMAIN = "gardena_mover_ble"
+MANUFACTURER = "Gardena"
 
 LOGGER = logging.getLogger(__package__)
