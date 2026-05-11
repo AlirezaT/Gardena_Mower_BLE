@@ -69,7 +69,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
     async def _async_update_data(self) -> dict[str, str | int]:
         """Poll the device."""
         LOGGER.debug("Polling device")
-        LOGGER.debug("MOWER DATA: %s", data)
+        
 
         data: dict[str, str | int] = {}
 
@@ -102,5 +102,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
             LOGGER.error("Error getting data from device")
             await self._async_find_device()
             raise UpdateFailed("Error getting data from device") from err
+        
+        LOGGER.debug("MOWER DATA: %s", data)
 
         return data
