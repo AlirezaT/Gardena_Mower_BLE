@@ -21,6 +21,98 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
         native_unit_of_measurement=PERCENTAGE,
     ),
+
+    SensorEntityDescription(
+        key="activity",
+        icon="mdi:robot-mower",
+    ),
+
+    SensorEntityDescription(
+        key="state",
+        icon="mdi:state-machine",
+    ),
+
+    SensorEntityDescription(
+        key="next_start_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+
+    SensorEntityDescription(
+        key="RemainingChargingTime",
+        native_unit_of_measurement="min",
+        icon="mdi:battery-clock",
+    ),
+
+    SensorEntityDescription(
+        key="errorCode",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:alert-circle",
+    ),
+
+    SensorEntityDescription(
+        key="NumberOfMessages",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:message",
+    ),
+
+    SensorEntityDescription(
+        key="operatorstate",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+        SensorEntityDescription(
+        key="totalRunningTime",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:timer-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    SensorEntityDescription(
+        key="totalCuttingTime",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:content-cut",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    SensorEntityDescription(
+        key="totalChargingTime",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-charging",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    SensorEntityDescription(
+        key="totalSearchingTime",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:magnify",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    SensorEntityDescription(
+        key="cuttingBladeUsageTime",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:knife",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    SensorEntityDescription(
+        key="numberOfCollisions",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:alert",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+
+    SensorEntityDescription(
+        key="numberOfChargingCycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:battery-sync",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 )
 
 

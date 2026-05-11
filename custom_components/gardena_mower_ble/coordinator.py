@@ -17,7 +17,7 @@ from .const import DOMAIN, LOGGER
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
 
-SCAN_INTERVAL = timedelta(seconds=60)
+SCAN_INTERVAL = timedelta(seconds=15)
 
 
 class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
@@ -117,12 +117,18 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
             try:
                 data["statistics"] = await self.mower.command("GetAllStatistics")
                 LOGGER.debug("statuses: " + str(data["statistics"]))
+
+                # Flatten statistics into top-level coordinator data
+                if data["statistics"]:
+                    for key, value in data["statistics"].items():
+                        data[key] = value
+
             except ValueError as e:
                 if "Data length mismatch" in str(e):
                     LOGGER.debug("Known fail on GetAllStatistics - skipping")
                     data["statistics"] = None
                 else:
-                    raise  # Re-raise the exception if it's not the known ValueError
+                    raise
 
             data["operatorstate"] = await self.mower.command("IsOperatorLoggedIn")
             LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
