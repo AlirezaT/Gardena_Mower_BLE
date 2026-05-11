@@ -1,4 +1,4 @@
-"""Provides the HusqvarnaAutomowerBleEntity."""
+"""Provides the GardenaMowerBleEntity."""
 
 from homeassistant.helpers.device_registry import (
     CONNECTION_BLUETOOTH,
@@ -9,15 +9,15 @@ from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER
-from .coordinator import HusqvarnaCoordinator
+from .coordinator import GardenaCoordinator
 
 
-class HusqvarnaAutomowerBleEntity(CoordinatorEntity[HusqvarnaCoordinator]):
-    """HusqvarnaCoordinator entity for Husqvarna Automower Bluetooth."""
+class GardenaMowerBleEntity(CoordinatorEntity[GardenaCoordinator]):
+    """GardenaCoordinator entity for Gardena Automower Bluetooth."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: HusqvarnaCoordinator) -> None:
+    def __init__(self, coordinator: GardenaCoordinator) -> None:
         """Initialize coordinator entity."""
         super().__init__(coordinator)
 
@@ -35,11 +35,11 @@ class HusqvarnaAutomowerBleEntity(CoordinatorEntity[HusqvarnaCoordinator]):
         return super().available and self.coordinator.mower.is_connected()
 
 
-class HusqvarnaAutomowerBleDescriptorEntity(HusqvarnaAutomowerBleEntity):
+class GardenaMowerBleDescriptorEntity(GardenaMowerBleEntity):
     """Coordinator entity for entities with entity description."""
 
     def __init__(
-        self, coordinator: HusqvarnaCoordinator, description: EntityDescription
+        self, coordinator: GardenaCoordinator, description: EntityDescription
     ) -> None:
         """Initialize description entity."""
         super().__init__(coordinator)

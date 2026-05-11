@@ -1,4 +1,4 @@
-"""Config flow for Husqvarna Bluetooth integration."""
+"""Config flow for Gardena Bluetooth integration."""
 
 from collections.abc import Mapping
 import random
@@ -45,8 +45,8 @@ def _pin_valid(pin: str) -> bool:
     return True
 
 
-class HusqvarnaAutomowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Husqvarna Bluetooth."""
+class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Gardena Bluetooth."""
 
     VERSION = 1
 

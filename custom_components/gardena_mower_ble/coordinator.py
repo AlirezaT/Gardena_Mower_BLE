@@ -15,18 +15,18 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import DOMAIN, LOGGER
 
 if TYPE_CHECKING:
-    from . import HusqvarnaConfigEntry
+    from . import GardenaConfigEntry
 
 SCAN_INTERVAL = timedelta(seconds=60)
 
 
-class HusqvarnaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
+class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
     """Class to manage fetching data."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: HusqvarnaConfigEntry,
+        config_entry: GardenaConfigEntry,
         mower: Mower,
         address: str,
         channel_id: str,

@@ -10,8 +10,8 @@ from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import HusqvarnaConfigEntry
-from .entity import HusqvarnaAutomowerBleDescriptorEntity
+from . import GardenaConfigEntry
+from .entity import GardenaMowerBleDescriptorEntity
 
 DESCRIPTIONS = (
     SensorEntityDescription(
@@ -26,19 +26,19 @@ DESCRIPTIONS = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: HusqvarnaConfigEntry,
+    entry: GardenaConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Husqvarna Automower Ble sensor based on a config entry."""
+    """Set up Gardena Automower Ble sensor based on a config entry."""
     coordinator = entry.runtime_data
     async_add_entities(
-        HusqvarnaAutomowerBleSensor(coordinator, description)
+        GardenaMowerBleSensor(coordinator, description)
         for description in DESCRIPTIONS
         if description.key in coordinator.data
     )
 
 
-class HusqvarnaAutomowerBleSensor(HusqvarnaAutomowerBleDescriptorEntity, SensorEntity):
+class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
     """Representation of a sensor."""
 
     entity_description: SensorEntityDescription

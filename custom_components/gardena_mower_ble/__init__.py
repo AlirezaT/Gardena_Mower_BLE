@@ -1,4 +1,4 @@
-"""The Husqvarna Autoconnect Bluetooth integration."""
+"""The Gardena Autoconnect Bluetooth integration."""
 
 from automower_ble.mower import Mower
 from automower_ble.protocol import ResponseResult
@@ -12,9 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from .const import DOMAIN, LOGGER
-from .coordinator import HusqvarnaCoordinator
+from .coordinator import GardenaCoordinator
 
-type HusqvarnaConfigEntry = ConfigEntry[HusqvarnaCoordinator]
+type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
 PLATFORMS = [
     Platform.LAWN_MOWER,
@@ -22,13 +22,13 @@ PLATFORMS = [
 ]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: HusqvarnaConfigEntry) -> bool:
-    """Set up Husqvarna Autoconnect Bluetooth from a config entry."""
+async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> bool:
+    """Set up Gardena Autoconnect Bluetooth from a config entry."""
     if CONF_PIN not in entry.data:
         raise ConfigEntryAuthFailed(
             translation_domain=DOMAIN,
             translation_key="pin_required",
-            translation_placeholders={"domain_name": "Husqvarna Automower BLE"},
+            translation_placeholders={"domain_name": "Gardena Automower BLE"},
         )
 
     address = entry.data[CONF_ADDRESS]
@@ -63,7 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HusqvarnaConfigEntry) ->
     model = await mower.get_model()
     LOGGER.debug("Connected to Automower: %s", model)
 
-    coordinator = HusqvarnaCoordinator(hass, entry, mower, address, channel_id, model)
+    coordinator = GardenaCoordinator(hass, entry, mower, address, channel_id, model)
 
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
@@ -72,10 +72,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: HusqvarnaConfigEntry) ->
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: HusqvarnaConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        coordinator: HusqvarnaCoordinator = entry.runtime_data
+        coordinator: GardenaCoordinator = entry.runtime_data
         await coordinator.async_shutdown()
 
     return unload_ok

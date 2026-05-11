@@ -1,4 +1,4 @@
-"""The Husqvarna Autoconnect Bluetooth lawn mower platform."""
+"""The Gardena Autoconnect Bluetooth lawn mower platform."""
 
 from automower_ble.protocol import MowerActivity, MowerState, ResponseResult
 
@@ -11,15 +11,15 @@ from homeassistant.components.lawn_mower import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import HusqvarnaConfigEntry
+from . import GardenaConfigEntry
 from .const import LOGGER
-from .coordinator import HusqvarnaCoordinator
-from .entity import HusqvarnaAutomowerBleEntity
+from .coordinator import GardenaCoordinator
+from .entity import GardenaMowerBleEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: HusqvarnaConfigEntry,
+    config_entry: GardenaConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up AutomowerLawnMower integration from a config entry."""
@@ -36,8 +36,8 @@ async def async_setup_entry(
     )
 
 
-class AutomowerLawnMower(HusqvarnaAutomowerBleEntity, LawnMowerEntity):
-    """Husqvarna Automower."""
+class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
+    """Gardena Automower."""
 
     _attr_name = None
     _attr_supported_features = (
@@ -48,7 +48,7 @@ class AutomowerLawnMower(HusqvarnaAutomowerBleEntity, LawnMowerEntity):
 
     def __init__(
         self,
-        coordinator: HusqvarnaCoordinator,
+        coordinator: GardenaCoordinator,
         address: str,
     ) -> None:
         """Initialize the lawn mower."""
