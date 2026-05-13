@@ -192,6 +192,27 @@ class Mower(BLEClient):
         # The response validation is expected to fail
         await self.command("StartTrigger")
 
+    async def mower_spot_cut(self) -> ResponseResult:
+        """
+        Start spot cutting.
+
+        Newer Gardena apps define a dedicated StartSpotCutting command. Some
+        mower firmware rejects that command with INVALID_ID, so fall back to the
+        older point-of-interest mower mode and the normal start trigger.
+        """
+        result, _ = await self.command_response("StartSpotCutting")
+        if result is ResponseResult.OK:
+            return result
+        if result is not ResponseResult.INVALID_ID:
+            return result
+
+        result, _ = await self.command_response("SetMode", mode=ModeOfOperation.POI)
+        if result is not ResponseResult.OK:
+            return result
+
+        result, _ = await self.command_response("StartTrigger")
+        return result
+
     async def mower_park(self):
         await self.command("SetOverrideParkUntilNextStart")
 

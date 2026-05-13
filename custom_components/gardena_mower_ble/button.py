@@ -52,13 +52,7 @@ class GardenaMowerBleButton(GardenaMowerBleDescriptorEntity, ButtonEntity):
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
-        result, _ = await self.coordinator.mower.command_response(
-            self.entity_description.key
-        )
-        if result is ResponseResult.INVALID_ID:
-            raise HomeAssistantError(
-                "Spot Cut is not supported by this mower or firmware"
-            )
+        result = await self.coordinator.mower.mower_spot_cut()
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Spot Cut failed: {result.name}")
 
