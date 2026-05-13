@@ -18,6 +18,7 @@ type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
 PLATFORMS = [
     Platform.LAWN_MOWER,
+    Platform.NUMBER,
     Platform.SENSOR,
 ]
 
