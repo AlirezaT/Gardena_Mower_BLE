@@ -1,6 +1,6 @@
 """The Gardena Autoconnect Bluetooth lawn mower platform."""
 
-from automower_ble.protocol import MowerActivity, MowerState, ResponseResult
+from .automower_ble.protocol import MowerActivity, MowerState, ResponseResult
 
 from homeassistant.components import bluetooth
 from homeassistant.components.lawn_mower import (

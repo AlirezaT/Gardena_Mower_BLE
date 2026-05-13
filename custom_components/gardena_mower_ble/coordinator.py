@@ -3,8 +3,8 @@
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from automower_ble.mower import Mower
-from automower_ble.protocol import ResponseResult
+from .automower_ble.mower import Mower
+from .automower_ble.protocol import ResponseResult
 from bleak import BleakError
 from bleak_retry_connector import close_stale_connections_by_address
 
@@ -17,7 +17,7 @@ from .const import DOMAIN, LOGGER
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
 
-SCAN_INTERVAL = timedelta(seconds=15)
+SCAN_INTERVAL = timedelta(seconds=8)
 
 
 class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
@@ -112,6 +112,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
 
             data["RemainingChargingTime"] = await self.mower.command("GetRemainingChargingTime")
             LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
+
+            data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
+            LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
 
             # workaround for issue21
             try:

@@ -4,8 +4,8 @@ from collections.abc import Mapping
 import random
 from typing import Any
 
-from automower_ble.mower import Mower
-from automower_ble.protocol import ResponseResult
+from .automower_ble.mower import Mower
+from .automower_ble.protocol import ResponseResult
 from bleak import BleakError
 from bleak_retry_connector import get_device
 from gardena_bluetooth.const import ScanService
