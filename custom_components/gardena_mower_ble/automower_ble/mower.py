@@ -89,7 +89,9 @@ class Mower(BLEClient):
             return response_dict["response"]
         return response_dict
 
-    async def command_response(self, command_name: str, **kwargs):
+    async def command_response(
+        self, command_name: str, warn_on_error: bool = True, **kwargs
+    ):
         """
         Send a command and return the mower response result with parsed data.
 
@@ -104,10 +106,17 @@ class Mower(BLEClient):
 
         result = ResponseResult(response[16])
         if result is not ResponseResult.OK:
-            logger.warning("%s returned %s", command_name, result.name)
+            if warn_on_error:
+                logger.warning("%s returned %s", command_name, result.name)
+            else:
+                logger.debug("%s returned %s", command_name, result.name)
             return result, None
 
-        response_dict = command.parse_response(response)
+        try:
+            response_dict = command.parse_response(response)
+        except ValueError as err:
+            logger.debug("%s returned unparsable payload: %s", command_name, err)
+            return result, None
         if response_dict is not None and len(response_dict) == 1:
             return result, response_dict["response"]
         return result, response_dict
@@ -196,24 +205,15 @@ class Mower(BLEClient):
         """
         Start spot cutting.
 
-        Newer Gardena apps define a dedicated StartSpotCutting command. Some
-        mower firmware rejects that command with INVALID_ID, so fall back to the
-        older point-of-interest mower mode and the normal start trigger.
+        The Gardena app exposes SpotCut as a mower action, but logs show this
+        mower can behave oddly if we switch directly into POI mode. Start or
+        resume mowing first, then ask the mower to enter SpotCut.
         """
-        result, _ = await self.command_response("StartSpotCutting")
-        if result is ResponseResult.OK:
-            return result
-        if result is not ResponseResult.INVALID_ID:
-            return result
-
-        result, _ = await self.command_response("SetMode", mode=ModeOfOperation.POI)
-        if result is not ResponseResult.OK:
-            return result
-
-        # StartTrigger can return UNKNOWN_ERROR even when accepted, just like
-        # normal mower resume/start handling in this integration.
         await self.command("StartTrigger")
-        return ResponseResult.OK
+        await asyncio.sleep(2)
+
+        result, _ = await self.command_response("StartSpotCutting")
+        return result
 
 
     async def mower_park(self):

@@ -44,6 +44,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
         self.channel_id = channel_id
         self.model = model
         self.mower = mower
+        self._spot_cutting_status_supported = True
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and any connection."""
@@ -119,17 +120,26 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
             except KeyError:
                 LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
 
-            try:
-                result, spot_cutting = await self.mower.command_response(
-                    "GetSpotCutting"
-                )
-                if result is ResponseResult.OK:
-                    data["spotCutting"] = spot_cutting
-                    LOGGER.debug("spotCutting: " + str(data["spotCutting"]))
-                else:
-                    LOGGER.debug("GetSpotCutting returned %s - skipping", result.name)
-            except (KeyError, ValueError, IndexError):
-                LOGGER.debug("GetSpotCutting failed - skipping", exc_info=True)
+            if self._spot_cutting_status_supported:
+                try:
+                    result, spot_cutting = await self.mower.command_response(
+                        "GetSpotCutting", warn_on_error=False
+                    )
+                    if result is ResponseResult.OK:
+                        data["spotCutting"] = spot_cutting
+                        LOGGER.debug("spotCutting: " + str(data["spotCutting"]))
+                    else:
+                        self._spot_cutting_status_supported = False
+                        LOGGER.debug(
+                            "GetSpotCutting returned %s - disabling spot cutting status polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._spot_cutting_status_supported = False
+                    LOGGER.debug(
+                        "GetSpotCutting failed - disabling spot cutting status polling",
+                        exc_info=True,
+                    )
 
             # workaround for issue21
             try:

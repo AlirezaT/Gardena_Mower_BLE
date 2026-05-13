@@ -349,12 +349,14 @@
     "StartSpotCutting": {
         "major": 14,
         "minor": 20,
+        "responseType": "uint16",
         "description": "Start spot cutting."
     },
 
     "StopSpotCutting": {
         "major": 14,
         "minor": 24,
+        "responseType": "uint16",
         "description": "Stop spot cutting."
     }
 }
