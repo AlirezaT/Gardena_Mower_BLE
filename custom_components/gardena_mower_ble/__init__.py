@@ -17,6 +17,7 @@ from .coordinator import GardenaCoordinator
 type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
 PLATFORMS = [
+    Platform.BUTTON,
     Platform.LAWN_MOWER,
     Platform.NUMBER,
     Platform.SENSOR,

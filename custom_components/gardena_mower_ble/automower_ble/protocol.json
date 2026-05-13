@@ -313,36 +313,50 @@
         "minor": 0,
         "responseType": "uint16",
         "description": "Get drive past wire distance."
-        },
+    },
 
-        "SetDrivePastWire": {
+    "SetDrivePastWire": {
         "major": 4712,
         "minor": 1,
         "requestType": {
             "distance": "uint16"
         },
         "description": "Set drive past wire distance."
-        },
+    },
 
-        "GetAllDrivingSettings": {
+    "GetAllDrivingSettings": {
         "major": 4712,
         "minor": 2,
         "responseType": {
             "drivePastWire": "uint16"
         },
         "description": "Get all driving settings."
-        },
+    },
 
-        "SubscribeDrivingSettingsEvents": {
+    "SubscribeDrivingSettingsEvents": {
         "major": 4712,
         "minor": 9,
         "description": "Subscribe to driving settings events."
-        },
+    },
 
-        "GetSpotCutting": {
+    "GetSpotCutting": {
         "major": 4,
         "minor": 13,
         "responseType": "uint8",
         "description": "Get spot cutting activation state."
-        }
+    },
+
+    "StartSpotCutting": {
+        "major": 14,
+        "minor": 20,
+        "responseType": "uint16",
+        "description": "Start spot cutting."
+    },
+
+    "StopSpotCutting": {
+        "major": 14,
+        "minor": 24,
+        "responseType": "uint16",
+        "description": "Stop spot cutting."
+    }
 }
