@@ -11,7 +11,7 @@ import asyncio
 import datetime as dt
 import logging
 
-from automower_ble.protocol import (
+from .protocol import (
     BLEClient,
     Command,
     MowerState,
@@ -20,8 +20,8 @@ from automower_ble.protocol import (
     ResponseResult,
     TaskInformation,
 )
-from automower_ble.models import MowerModels
-from automower_ble.error_codes import ErrorCodes
+from .models import MowerModels
+from .error_codes import ErrorCodes
 
 from bleak import BleakScanner
 

@@ -1,5 +1,5 @@
 import binascii
-from automower_ble.helpers import crc
+from .helpers import crc
 from enum import IntEnum
 import asyncio
 import logging
@@ -283,7 +283,9 @@ class BLEClient:
         if self.protocol is None:
 
             def read_protocol_file():
-                with files("automower_ble").joinpath("protocol.json").open("r") as f:
+                protocol_file = files(__package__).joinpath("protocol.json")
+                logger.debug("Loading protocol from %s", protocol_file)
+                with protocol_file.open("r") as f:
                     return json.load(f)
 
             self.protocol = await asyncio.get_running_loop().run_in_executor(
