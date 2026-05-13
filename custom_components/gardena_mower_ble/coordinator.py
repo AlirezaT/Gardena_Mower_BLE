@@ -113,8 +113,11 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
             data["RemainingChargingTime"] = await self.mower.command("GetRemainingChargingTime")
             LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
 
-            data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
-            LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
+            try:
+                data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
+                LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
+            except KeyError:
+                LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
 
             # workaround for issue21
             try:
