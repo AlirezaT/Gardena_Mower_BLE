@@ -89,6 +89,29 @@ class Mower(BLEClient):
             return response_dict["response"]
         return response_dict
 
+    async def command_response(self, command_name: str, **kwargs):
+        """
+        Send a command and return the mower response result with parsed data.
+
+        This is useful for command buttons where Home Assistant should surface a
+        clear command failure instead of only logging a low-level protocol warning.
+        """
+        command = Command(self.channel_id, (await self.get_protocol())[command_name])
+        request = command.generate_request(**kwargs)
+        response = await self._request_response(request)
+        if response is None:
+            return ResponseResult.UNKNOWN_ERROR, None
+
+        result = ResponseResult(response[16])
+        if result is not ResponseResult.OK:
+            logger.warning("%s returned %s", command_name, result.name)
+            return result, None
+
+        response_dict = command.parse_response(response)
+        if response_dict is not None and len(response_dict) == 1:
+            return result, response_dict["response"]
+        return result, response_dict
+
     async def get_manufacturer(self) -> str | None:
         """Get the mower manufacturer"""
         model = await self.command("GetModel")

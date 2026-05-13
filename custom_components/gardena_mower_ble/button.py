@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.components import bluetooth
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
@@ -51,5 +52,14 @@ class GardenaMowerBleButton(GardenaMowerBleDescriptorEntity, ButtonEntity):
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
-        await self.coordinator.mower.command(self.entity_description.key)
+        result, _ = await self.coordinator.mower.command_response(
+            self.entity_description.key
+        )
+        if result is ResponseResult.INVALID_ID:
+            raise HomeAssistantError(
+                "Spot Cut is not supported by this mower or firmware"
+            )
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Spot Cut failed: {result.name}")
+
         await self.coordinator.async_request_refresh()
