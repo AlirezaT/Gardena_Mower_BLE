@@ -210,8 +210,11 @@ class Mower(BLEClient):
         if result is not ResponseResult.OK:
             return result
 
-        result, _ = await self.command_response("StartTrigger")
-        return result
+        # StartTrigger can return UNKNOWN_ERROR even when accepted, just like
+        # normal mower resume/start handling in this integration.
+        await self.command("StartTrigger")
+        return ResponseResult.OK
+
 
     async def mower_park(self):
         await self.command("SetOverrideParkUntilNextStart")

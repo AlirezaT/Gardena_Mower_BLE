@@ -119,6 +119,12 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
             except KeyError:
                 LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
 
+            try:
+                data["spotCutting"] = await self.mower.command("GetSpotCutting")
+                LOGGER.debug("spotCutting: " + str(data["spotCutting"]))
+            except KeyError:
+                LOGGER.debug("GetSpotCutting not found in protocol.json - skipping")
+
             # workaround for issue21
             try:
                 data["statistics"] = await self.mower.command("GetAllStatistics")

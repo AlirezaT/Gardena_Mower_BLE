@@ -21,6 +21,13 @@ ERROR_CODE_DESCRIPTIONS = {
     10: "Unknown mower message",
 }
 
+SPOT_CUTTING_STATES = {
+    0: "not_active",
+    1: "idle",
+    2: "pending_start",
+    3: "running",
+}
+
 DESCRIPTIONS = (
     SensorEntityDescription(
         key="battery_level",
@@ -77,6 +84,11 @@ DESCRIPTIONS = (
         name="Operator State",
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:account",
+    ),
+    SensorEntityDescription(
+        key="spotCutting",
+        name="Spot Cutting",
+        icon="mdi:content-cut",
     ),
 
     # Statistics
@@ -181,6 +193,9 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
 
         if value is None:
             return None
+
+        if key == "spotCutting":
+            return SPOT_CUTTING_STATES.get(value, f"unknown_{value}")
 
         # Convert enum values like MowerActivity.PARKED to "parked"
         if hasattr(value, "name"):
