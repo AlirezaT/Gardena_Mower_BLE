@@ -76,8 +76,8 @@ class ResponseResult(IntEnum):
 class TaskInformation:
     def __init__(
         self,
-        next_start_time,
-        duration_in_seconds,
+        start_time_in_minutes,
+        duration_in_minutes,
         on_monday,
         on_tuesday,
         on_wednesday,
@@ -86,8 +86,8 @@ class TaskInformation:
         on_saturday,
         on_sunday,
     ):
-        self.next_start_time = next_start_time
-        self.duration_in_seconds = duration_in_seconds
+        self.start_time_in_minutes = start_time_in_minutes
+        self.duration_in_minutes = duration_in_minutes
         self.on_monday = on_monday
         self.on_tuesday = on_tuesday
         self.on_wednesday = on_wednesday
@@ -165,6 +165,11 @@ class Command:
                 elif request_type == "uint8":
                     request_length += 1
                     request_data += kwargs[request_name].to_bytes(1, byteorder="little")
+                elif request_type == "bool":
+                    request_length += 1
+                    request_data += (1 if kwargs[request_name] else 0).to_bytes(
+                        1, byteorder="little"
+                    )
                 else:
                     raise ValueError("Unknown request type: " + request_type)
         self.request_data[16] = request_length

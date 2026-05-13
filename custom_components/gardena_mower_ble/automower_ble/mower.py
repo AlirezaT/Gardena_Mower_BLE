@@ -27,6 +27,8 @@ from bleak import BleakScanner
 
 logger = logging.getLogger(__name__)
 
+MAX_SCHEDULE_TASKS = 15
+
 
 class Mower(BLEClient):
     def __init__(self, channel_id: int, address, pin=None):
@@ -227,8 +229,10 @@ class Mower(BLEClient):
         """
         Get information about a specific task
         """
-        task = await self.command("GetTask", taskId=taskid)
-        if task is None:
+        result, task = await self.command_response(
+            "GetTask", warn_on_error=False, taskId=taskid
+        )
+        if result is not ResponseResult.OK or task is None:
             return None
         return TaskInformation(
             task["start"],
@@ -241,6 +245,58 @@ class Mower(BLEClient):
             task["useOnSaturday"],
             task["useOnSunday"],
         )
+
+    async def get_tasks(self) -> list[TaskInformation]:
+        """Get all weekly schedule tasks from the mower."""
+        task_count = await self.command("GetNumberOfTasks")
+        if task_count is None:
+            return []
+
+        for first_task_id in (0, 1):
+            tasks: list[TaskInformation] = []
+            for task_id in range(first_task_id, first_task_id + task_count):
+                task = await self.get_task(task_id)
+                if task is None:
+                    break
+                tasks.append(task)
+            if len(tasks) == task_count:
+                return tasks
+
+        return []
+
+    async def set_tasks(self, tasks: list[TaskInformation]) -> None:
+        """Replace the weekly schedule tasks on the mower."""
+        if len(tasks) > MAX_SCHEDULE_TASKS:
+            raise ValueError(
+                f"A maximum of {MAX_SCHEDULE_TASKS} schedule tasks is supported"
+            )
+
+        await self._expect_ok("StartTaskTransaction")
+        await self._expect_ok("DeleteAllTask")
+
+        for task in tasks:
+            await self._expect_ok(
+                "AddTask",
+                start=int(task.start_time_in_minutes),
+                duration=int(task.duration_in_minutes),
+                useOnSunday=bool(task.on_sunday),
+                unknown_1=0,
+                useOnMonday=bool(task.on_monday),
+                useOnTuesday=bool(task.on_tuesday),
+                useOnWednesday=bool(task.on_wednesday),
+                useOnThursday=bool(task.on_thursday),
+                useOnFriday=bool(task.on_friday),
+                useOnSaturday=bool(task.on_saturday),
+                unknown_2=0,
+            )
+
+        await self._expect_ok("CommitTaskTransaction")
+
+    async def _expect_ok(self, command_name: str, **kwargs) -> None:
+        """Send a command and raise when the mower rejects it."""
+        result, _ = await self.command_response(command_name, **kwargs)
+        if result is not ResponseResult.OK:
+            raise RuntimeError(f"{command_name} returned {result.name}")
 
 
 async def main(mower: Mower):
