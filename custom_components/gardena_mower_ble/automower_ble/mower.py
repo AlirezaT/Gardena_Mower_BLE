@@ -138,6 +138,33 @@ class Mower(BLEClient):
             return result, response_dict["response"]
         return result, response_dict
 
+    async def command_response_locked(
+        self, command_name: str, warn_on_error: bool = True, **kwargs
+    ):
+        """Send a command while the caller already holds the BLE command lock."""
+        command = Command(self.channel_id, (await self.get_protocol())[command_name])
+        request = command.generate_request(**kwargs)
+        response = await self._request_response_locked(request)
+        if response is None:
+            return ResponseResult.UNKNOWN_ERROR, None
+
+        result = ResponseResult(response[16])
+        if result is not ResponseResult.OK:
+            if warn_on_error:
+                logger.warning("%s returned %s", command_name, result.name)
+            else:
+                logger.debug("%s returned %s", command_name, result.name)
+            return result, None
+
+        try:
+            response_dict = command.parse_response(response)
+        except ValueError as err:
+            logger.debug("%s returned unparsable payload: %s", command_name, err)
+            return result, None
+        if response_dict is not None and len(response_dict) == 1:
+            return result, response_dict["response"]
+        return result, response_dict
+
     async def get_manufacturer(self) -> str | None:
         """Get the mower manufacturer"""
         model = await self.command("GetModel")
@@ -226,20 +253,44 @@ class Mower(BLEClient):
         some Gardena models. The official app starts SpotCut by creating a
         short mowing override, then triggering the mower to start.
         """
-        result, _ = await self.command_response(
-            "SetMode", mode=ModeOfOperation.AUTO
-        )
-        if result is not ResponseResult.OK:
-            return result
+        async with self.lock:
+            result, _ = await self.command_response_locked(
+                "SetMode", mode=ModeOfOperation.AUTO
+            )
+            if result is not ResponseResult.OK:
+                return result
 
-        result, _ = await self.command_response(
-            "SetOverrideMow", duration=SPOT_CUT_DURATION_SECONDS
-        )
-        if result is not ResponseResult.OK:
-            return result
+            result, _ = await self.command_response_locked(
+                "SetOverrideMow", duration=SPOT_CUT_DURATION_SECONDS
+            )
+            if result is not ResponseResult.OK:
+                return result
 
-        result, _ = await self.command_response("StartTrigger")
-        return result
+            result, _ = await self.command_response_locked(
+                "StartTrigger", warn_on_error=False
+            )
+            if result is ResponseResult.OK:
+                return result
+
+            if result is ResponseResult.UNKNOWN_ERROR:
+                await asyncio.sleep(2)
+                _, state = await self.command_response_locked(
+                    "GetState", warn_on_error=False
+                )
+                _, activity = await self.command_response_locked(
+                    "GetActivity", warn_on_error=False
+                )
+                if (
+                    state == MowerState.IN_OPERATION
+                    and activity == MowerActivity.MOWING
+                ):
+                    logger.debug(
+                        "StartTrigger returned UNKNOWN_ERROR but mower is mowing"
+                    )
+                    return ResponseResult.OK
+
+            logger.warning("StartTrigger returned %s", result.name)
+            return result
 
     async def mower_park(self):
         await self.command("SetOverrideParkUntilNextStart")

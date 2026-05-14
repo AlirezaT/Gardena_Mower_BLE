@@ -371,27 +371,31 @@ class BLEClient:
 
     async def _request_response(self, request_data):
         async with self.lock:
-            try:
-                # If there are previous responses, flush them out
-                while not self.queue.empty():
-                    await self.queue.get()
+            return await self._request_response_locked(request_data)
 
-                await self._write_data(request_data)
+    async def _request_response_locked(self, request_data):
+        """Send a request while the caller already holds the BLE command lock."""
+        try:
+            # If there are previous responses, flush them out
+            while not self.queue.empty():
+                await self.queue.get()
 
-                response_data = await self._read_data()
-                if response_data is None:
-                    logger.error(
-                        "Unable to communicate with device: '%s'", self.address
-                    )
-                    if self.is_connected():
-                        await self.disconnect()
-                    return None
+            await self._write_data(request_data)
 
-            except asyncio.exceptions.CancelledError:
-                logger.debug("Received CancelledError")
+            response_data = await self._read_data()
+            if response_data is None:
+                logger.error(
+                    "Unable to communicate with device: '%s'", self.address
+                )
                 if self.is_connected():
                     await self.disconnect()
                 return None
+
+        except asyncio.exceptions.CancelledError:
+            logger.debug("Received CancelledError")
+            if self.is_connected():
+                await self.disconnect()
+            return None
 
         return response_data
 
