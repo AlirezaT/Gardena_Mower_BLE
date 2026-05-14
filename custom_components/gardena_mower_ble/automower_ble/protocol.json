@@ -442,6 +442,13 @@
         "description": "Prepare SpotCut before starting a manual mowing override."
     },
 
+    "GetSpotCuttingState": {
+        "major": 4710,
+        "minor": 9,
+        "responseType": "uint8",
+        "description": "Get prepared SpotCut state."
+    },
+
     "StartSpotCutting": {
         "major": 14,
         "minor": 20,

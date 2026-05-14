@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from homeassistant.components import bluetooth
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -25,6 +26,11 @@ class GardenaMowerBleSwitchEntityDescription(SwitchEntityDescription):
 
 
 DESCRIPTIONS = (
+    SwitchEntityDescription(
+        key="spotCutting",
+        name="Spot Cut",
+        icon="mdi:content-cut",
+    ),
     *(
         GardenaMowerBleSwitchEntityDescription(
             key=f"StartingPoint{starting_point_id}Enabled",
@@ -61,7 +67,11 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
 
     async_add_entities(
-        GardenaMowerBleSwitch(coordinator, description)
+        (
+            GardenaMowerBleSpotCutSwitch(coordinator, description)
+            if description.key == "spotCutting"
+            else GardenaMowerBleSwitch(coordinator, description)
+        )
         for description in DESCRIPTIONS
         if description.key in coordinator.data
     )
@@ -100,3 +110,46 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
             raise HomeAssistantError(f"{description.name} failed: {result.name}")
 
         await self.coordinator.async_request_refresh()
+
+
+class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
+    """Representation of the SpotCut switch."""
+
+    entity_description: SwitchEntityDescription
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return true if SpotCut is active."""
+        value = self.coordinator.data.get(self.entity_description.key)
+        if value is None:
+            return None
+        return bool(value)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Start SpotCut."""
+        await self._async_ensure_connected()
+        result = await self.coordinator.mower.mower_spot_cut()
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Spot Cut failed: {result.name}")
+
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Stop SpotCut."""
+        await self._async_ensure_connected()
+        result = await self.coordinator.mower.mower_stop_spot_cut()
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Stop Spot Cut failed: {result.name}")
+
+        await self.coordinator.async_request_refresh()
+
+    async def _async_ensure_connected(self) -> None:
+        """Connect to the mower if needed."""
+        if self.coordinator.mower.is_connected():
+            return
+
+        device = bluetooth.async_ble_device_from_address(
+            self.coordinator.hass, self.coordinator.address, connectable=True
+        )
+        if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
+            raise HomeAssistantError("Unable to connect to mower")

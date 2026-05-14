@@ -296,6 +296,11 @@ class Mower(BLEClient):
             logger.warning("StartTrigger returned %s", result.name)
             return result
 
+    async def mower_stop_spot_cut(self) -> ResponseResult:
+        """Stop SpotCut by pausing the mower, matching the app-observed flow."""
+        result, _ = await self.command_response("Pause")
+        return result
+
     async def mower_park(self):
         await self.command("SetOverrideParkUntilNextStart")
 

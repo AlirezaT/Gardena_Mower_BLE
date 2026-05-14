@@ -197,7 +197,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._spot_cutting_status_supported:
                 try:
                     result, spot_cutting = await self.mower.command_response(
-                        "GetSpotCutting", warn_on_error=False
+                        "GetSpotCuttingState", warn_on_error=False
                     )
                     if result is ResponseResult.OK:
                         data["spotCutting"] = spot_cutting
@@ -205,13 +205,13 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     else:
                         self._spot_cutting_status_supported = False
                         LOGGER.debug(
-                            "GetSpotCutting returned %s - disabling spot cutting status polling",
+                            "GetSpotCuttingState returned %s - disabling spot cutting status polling",
                             result.name,
                         )
                 except (KeyError, ValueError, IndexError):
                     self._spot_cutting_status_supported = False
                     LOGGER.debug(
-                        "GetSpotCutting failed - disabling spot cutting status polling",
+                        "GetSpotCuttingState failed - disabling spot cutting status polling",
                         exc_info=True,
                     )
 
