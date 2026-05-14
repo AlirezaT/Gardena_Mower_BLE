@@ -90,6 +90,14 @@ DESCRIPTIONS = (
         name="Spot Cutting",
         icon="mdi:content-cut",
     ),
+    SensorEntityDescription(
+        key="StartingPointChargingStationProportion",
+        name="Charging Station Mowing Share",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:home-percent",
+    ),
 
     # Statistics
     SensorEntityDescription(

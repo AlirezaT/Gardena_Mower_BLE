@@ -21,18 +21,34 @@ class GardenaMowerBleSwitchEntityDescription(SwitchEntityDescription):
 
     set_command: str
     starting_point_id: int
+    value_parameter: str
 
 
-DESCRIPTIONS = tuple(
-    GardenaMowerBleSwitchEntityDescription(
-        key=f"StartingPoint{starting_point_id}Enabled",
-        name=f"Starting Point {starting_point_id}",
-        icon="mdi:map-marker-check",
-        entity_category=EntityCategory.CONFIG,
-        set_command="SetStartingPointEnabled",
-        starting_point_id=starting_point_id,
+DESCRIPTIONS = (
+    *(
+        GardenaMowerBleSwitchEntityDescription(
+            key=f"StartingPoint{starting_point_id}Enabled",
+            name=f"Starting Point {starting_point_id}",
+            icon="mdi:map-marker-check",
+            entity_category=EntityCategory.CONFIG,
+            set_command="SetStartingPointEnabled",
+            starting_point_id=starting_point_id,
+            value_parameter="enabled",
+        )
+        for starting_point_id in range(1, 4)
+    ),
+    *(
+        GardenaMowerBleSwitchEntityDescription(
+            key=f"StartingPoint{starting_point_id}CorridorCut",
+            name=f"Starting Point {starting_point_id} CorridorCut",
+            icon="mdi:arrow-collapse-horizontal",
+            entity_category=EntityCategory.CONFIG,
+            set_command="SetStartingPointCorridorCut",
+            starting_point_id=starting_point_id,
+            value_parameter="corridorCut",
+        )
+        for starting_point_id in range(1, 4)
     )
-    for starting_point_id in range(1, 4)
 )
 
 
@@ -78,7 +94,7 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
         result, _ = await self.coordinator.mower.command_response(
             description.set_command,
             startingPointId=description.starting_point_id,
-            enabled=enabled,
+            **{description.value_parameter: enabled},
         )
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"{description.name} failed: {result.name}")

@@ -364,6 +364,16 @@
         "description": "Enable or disable a manual starting point."
     },
 
+    "SetStartingPointWire": {
+        "major": 4706,
+        "minor": 9,
+        "requestType": {
+            "startingPointId": "uint8",
+            "wire": "uint8"
+        },
+        "description": "Set the wire followed to reach a manual starting point."
+    },
+
     "SetStartingPointDistance": {
         "major": 4706,
         "minor": 11,
@@ -382,6 +392,16 @@
             "proportion": "uint8"
         },
         "description": "Set manual starting point mowing share in percent."
+    },
+
+    "SetStartingPointCorridorCut": {
+        "major": 4706,
+        "minor": 27,
+        "requestType": {
+            "startingPointId": "uint8",
+            "corridorCut": "bool"
+        },
+        "description": "Enable or disable CorridorCut for a manual starting point."
     },
 
     "GetSpotCutting": {

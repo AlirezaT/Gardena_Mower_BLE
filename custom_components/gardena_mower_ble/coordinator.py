@@ -123,6 +123,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             if self._starting_points_supported:
                 try:
+                    starting_point_proportions = []
                     for starting_point_id in range(1, 4):
                         result, starting_point = await self.mower.command_response(
                             "GetStartingPoint",
@@ -146,7 +147,16 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data[f"{prefix}CorridorCut"] = bool(
                             starting_point["corridorCut"]
                         )
+                        starting_point_proportions.append(
+                            int(starting_point["proportion"])
+                        )
                         LOGGER.debug("%s: %s", prefix, starting_point)
+
+                    if len(starting_point_proportions) == 3:
+                        data["StartingPointChargingStationProportion"] = max(
+                            0,
+                            100 - sum(starting_point_proportions),
+                        )
                 except (KeyError, ValueError, IndexError):
                     self._starting_points_supported = False
                     LOGGER.debug(
