@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 MAX_SCHEDULE_TASKS = 15
 SECONDS_PER_MINUTE = 60
 MINUTES_PER_DAY = 24 * 60
+SPOT_CUT_DURATION_SECONDS = 30 * SECONDS_PER_MINUTE
 
 
 class Mower(BLEClient):
@@ -221,16 +222,24 @@ class Mower(BLEClient):
         """
         Start spot cutting.
 
-        The Gardena app exposes SpotCut as a mower action, but logs show this
-        mower can behave oddly if we switch directly into POI mode. Start or
-        resume mowing first, then ask the mower to enter SpotCut.
+        The dedicated StartSpotCutting command is rejected with INVALID_ID on
+        some Gardena models. The official app starts SpotCut by creating a
+        short mowing override, then triggering the mower to start.
         """
-        await self.command("StartTrigger")
-        await asyncio.sleep(2)
+        result, _ = await self.command_response(
+            "SetMode", mode=ModeOfOperation.AUTO
+        )
+        if result is not ResponseResult.OK:
+            return result
 
-        result, _ = await self.command_response("StartSpotCutting")
+        result, _ = await self.command_response(
+            "SetOverrideMow", duration=SPOT_CUT_DURATION_SECONDS
+        )
+        if result is not ResponseResult.OK:
+            return result
+
+        result, _ = await self.command_response("StartTrigger")
         return result
-
 
     async def mower_park(self):
         await self.command("SetOverrideParkUntilNextStart")
