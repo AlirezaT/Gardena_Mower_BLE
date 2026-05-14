@@ -263,17 +263,25 @@ class Mower(BLEClient):
         task_count = await self.command("GetNumberOfTasks")
         if task_count is None:
             return []
+        logger.debug("Mower reported %s schedule tasks", task_count)
 
         for first_task_id in (0, 1):
             tasks: list[TaskInformation] = []
             for task_id in range(first_task_id, first_task_id + task_count):
                 task = await self.get_task(task_id)
                 if task is None:
+                    logger.debug("Unable to read schedule task %s", task_id)
                     break
                 tasks.append(task)
             if len(tasks) == task_count:
+                logger.debug(
+                    "Read %s schedule tasks starting at task id %s",
+                    len(tasks),
+                    first_task_id,
+                )
                 return tasks
 
+        logger.debug("Unable to read mower schedule tasks")
         return []
 
     async def set_tasks(self, tasks: list[TaskInformation]) -> None:

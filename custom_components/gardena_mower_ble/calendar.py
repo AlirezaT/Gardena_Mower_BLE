@@ -69,8 +69,29 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
     @property
     def event(self) -> CalendarEvent | None:
         """Return the current or next upcoming schedule event."""
+        return self._next_event()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return schedule details as entity attributes."""
+        next_event = self._next_event()
+        return {
+            "schedule_count": len(self._tasks),
+            "next_start": (
+                next_event.start_datetime_local.isoformat() if next_event else None
+            ),
+            "next_end": (
+                next_event.end_datetime_local.isoformat() if next_event else None
+            ),
+            "schedules": [_task_description(task) for task in self._tasks],
+        }
+
+    def _next_event(self) -> CalendarEvent | None:
+        """Return the current or next upcoming schedule event."""
         now = dt_util.now()
-        events = self._expand_tasks(now - dt.timedelta(days=1), now + dt.timedelta(days=8))
+        events = self._expand_tasks(
+            now - dt.timedelta(days=1), now + dt.timedelta(days=8)
+        )
         current_or_next = [
             event for event in events if event.end_datetime_local > now
         ]
