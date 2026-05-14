@@ -250,13 +250,17 @@ class Mower(BLEClient):
         Start spot cutting.
 
         The dedicated StartSpotCutting command is rejected with INVALID_ID on
-        some Gardena models. The official app starts SpotCut by creating a
-        short mowing override, then triggering the mower to start.
+        some Gardena models. The official app first arms SpotCut, then starts
+        a manual mowing override.
         """
         async with self.lock:
             result, _ = await self.command_response_locked(
                 "SetMode", mode=ModeOfOperation.AUTO
             )
+            if result is not ResponseResult.OK:
+                return result
+
+            result, _ = await self.command_response_locked("PrepareSpotCutting")
             if result is not ResponseResult.OK:
                 return result
 

@@ -436,6 +436,12 @@
         "description": "Get spot cutting activation state."
     },
 
+    "PrepareSpotCutting": {
+        "major": 4710,
+        "minor": 7,
+        "description": "Prepare SpotCut before starting a manual mowing override."
+    },
+
     "StartSpotCutting": {
         "major": 14,
         "minor": 20,
