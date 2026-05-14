@@ -6,6 +6,10 @@
 
 Local Bluetooth Low Energy control for Gardena robotic mowers in Home Assistant.
 
+Useful for searches like Home Assistant Gardena mower, HACS Gardena mower
+integration, Gardena robotic mower Bluetooth, Gardena BLE, Automower BLE, and
+ESPHome Bluetooth proxy mower control.
+
 This custom integration talks directly to the mower over BLE. It does not use the
 cloud, and it exposes the mower as a Home Assistant lawn mower entity together
 with controls, schedule editing, starting point settings, SpotCut, SensorControl,
