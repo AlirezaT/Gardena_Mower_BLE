@@ -186,15 +186,14 @@
         "requestType": {
             "start": "uint32",
             "duration": "uint32",
-            "useOnSunday": "bool",
-            "unknown_1": "uint8",
             "useOnMonday": "bool",
             "useOnTuesday": "bool",
             "useOnWednesday": "bool",
             "useOnThursday": "bool",
             "useOnFriday": "bool",
             "useOnSaturday": "bool",
-            "unknown_2": "uint8"
+            "useOnSunday": "bool",
+            "unknown": "uint16"
         },
         "description": "Add a new task during a task transaction"
     },

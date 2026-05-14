@@ -311,19 +311,32 @@ class Mower(BLEClient):
         await self._expect_ok("DeleteAllTask")
 
         for task in tasks:
+            logger.debug(
+                "Writing schedule task start=%s duration=%s days=%s",
+                task.start_time_in_minutes,
+                task.duration_in_minutes,
+                {
+                    "monday": bool(task.on_monday),
+                    "tuesday": bool(task.on_tuesday),
+                    "wednesday": bool(task.on_wednesday),
+                    "thursday": bool(task.on_thursday),
+                    "friday": bool(task.on_friday),
+                    "saturday": bool(task.on_saturday),
+                    "sunday": bool(task.on_sunday),
+                },
+            )
             await self._expect_ok(
                 "AddTask",
                 start=int(task.start_time_in_minutes) * SECONDS_PER_MINUTE,
                 duration=int(task.duration_in_minutes) * SECONDS_PER_MINUTE,
-                useOnSunday=bool(task.on_sunday),
-                unknown_1=0,
                 useOnMonday=bool(task.on_monday),
                 useOnTuesday=bool(task.on_tuesday),
                 useOnWednesday=bool(task.on_wednesday),
                 useOnThursday=bool(task.on_thursday),
                 useOnFriday=bool(task.on_friday),
                 useOnSaturday=bool(task.on_saturday),
-                unknown_2=0,
+                useOnSunday=bool(task.on_sunday),
+                unknown=0,
             )
 
         await self._expect_ok("CommitTaskTransaction")
