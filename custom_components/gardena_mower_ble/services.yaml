@@ -1,0 +1,30 @@
+delete_schedule:
+  name: Delete schedule
+  description: Remove one weekly mowing schedule task from the mower.
+  fields:
+    index:
+      name: Schedule number
+      description: The 1-based schedule number shown in the schedule attributes.
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 15
+          mode: box
+    config_entry_id:
+      name: Config entry ID
+      description: Optional when only one Gardena mower BLE device is loaded.
+      required: false
+      selector:
+        text: {}
+
+clear_schedule:
+  name: Clear schedule
+  description: Remove all weekly mowing schedule tasks from the mower.
+  fields:
+    config_entry_id:
+      name: Config entry ID
+      description: Optional when only one Gardena mower BLE device is loaded.
+      required: false
+      selector:
+        text: {}

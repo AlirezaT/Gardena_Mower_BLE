@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 MAX_SCHEDULE_TASKS = 15
 SECONDS_PER_MINUTE = 60
+MINUTES_PER_DAY = 24 * 60
 
 
 class Mower(BLEClient):
@@ -292,6 +293,20 @@ class Mower(BLEClient):
                 f"A maximum of {MAX_SCHEDULE_TASKS} schedule tasks is supported"
             )
 
+        for task in tasks:
+            if (
+                task.start_time_in_minutes < 0
+                or task.start_time_in_minutes >= MINUTES_PER_DAY
+            ):
+                raise ValueError("Schedule start time must be within one day")
+            if (
+                task.duration_in_minutes <= 0
+                or task.duration_in_minutes > MINUTES_PER_DAY
+            ):
+                raise ValueError(
+                    "Schedule duration must be between 1 minute and 24 hours"
+                )
+
         await self._expect_ok("StartTaskTransaction")
         await self._expect_ok("DeleteAllTask")
 
@@ -311,6 +326,12 @@ class Mower(BLEClient):
                 unknown_2=0,
             )
 
+        await self._expect_ok("CommitTaskTransaction")
+
+    async def clear_tasks(self) -> None:
+        """Remove all weekly schedule tasks from the mower."""
+        await self._expect_ok("StartTaskTransaction")
+        await self._expect_ok("DeleteAllTask")
         await self._expect_ok("CommitTaskTransaction")
 
     async def _expect_ok(self, command_name: str, **kwargs) -> None:

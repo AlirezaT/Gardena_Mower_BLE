@@ -129,8 +129,8 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         recurrence_range: str | None = None,
     ) -> None:
         """Delete a weekly mowing schedule."""
-        task_index = self._task_index_from_uid(uid)
         tasks = await self._async_get_tasks()
+        task_index = self._task_index_from_delete_request(uid, recurrence_id, tasks)
         if task_index >= len(tasks):
             raise HomeAssistantError(f"Schedule {task_index + 1} does not exist")
 
@@ -248,6 +248,8 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
 
         if duration_minutes <= 0:
             raise HomeAssistantError("Schedule duration must be greater than zero")
+        if duration_minutes > 24 * 60:
+            raise HomeAssistantError("Schedule duration cannot be longer than 24 hours")
 
         return TaskInformation(
             start_minutes,
@@ -270,6 +272,40 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
             return int(uid.removeprefix(UID_PREFIX))
         except ValueError as err:
             raise HomeAssistantError(f"Unknown mower schedule uid: {uid}") from err
+
+    def _task_index_from_delete_request(
+        self,
+        uid: str,
+        recurrence_id: str | None,
+        tasks: list[TaskInformation],
+    ) -> int:
+        """Extract or infer the task index from a calendar delete request."""
+        try:
+            return self._task_index_from_uid(uid)
+        except HomeAssistantError:
+            if recurrence_id is None:
+                raise
+
+        try:
+            recurrence_start = dt_util.parse_datetime(recurrence_id)
+        except (TypeError, ValueError) as err:
+            raise HomeAssistantError(f"Unknown mower schedule uid: {uid}") from err
+
+        if recurrence_start is None:
+            raise HomeAssistantError(f"Unknown mower schedule uid: {uid}")
+
+        recurrence_start = dt_util.as_local(recurrence_start)
+        start_minutes = recurrence_start.hour * 60 + recurrence_start.minute
+        weekday = recurrence_start.weekday()
+        matches = [
+            index
+            for index, task in enumerate(tasks)
+            if task.start_time_in_minutes == start_minutes and _task_days(task)[weekday]
+        ]
+        if len(matches) != 1:
+            raise HomeAssistantError(f"Unknown mower schedule uid: {uid}")
+
+        return matches[0]
 
 
 def _local_midnight(day: dt.date) -> dt.datetime:
@@ -303,7 +339,10 @@ def _task_rrule(task: TaskInformation) -> str:
 def _task_description(task: TaskInformation) -> str:
     """Return a human-friendly task description."""
     start = _format_minutes(task.start_time_in_minutes)
-    end = _format_minutes(task.start_time_in_minutes + task.duration_in_minutes)
+    stop_time = task.start_time_in_minutes + task.duration_in_minutes
+    end = _format_minutes(stop_time)
+    if stop_time > 24 * 60:
+        end = f"next day {end}"
     days = ", ".join(
         day_name.title()
         for day_name, enabled in zip(DAY_NAMES, _task_days(task), strict=True)
