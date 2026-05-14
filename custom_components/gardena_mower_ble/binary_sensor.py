@@ -42,6 +42,12 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:home-lightning-bolt",
     ),
+    BinarySensorEntityDescription(
+        key="FrostSensorEnabled",
+        name="Frost Sensor Enabled",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:snowflake",
+    ),
 )
 
 

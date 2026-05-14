@@ -21,8 +21,8 @@ class GardenaMowerBleSwitchEntityDescription(SwitchEntityDescription):
     """Description for mower switch entities."""
 
     set_command: str
-    starting_point_id: int
     value_parameter: str
+    starting_point_id: int | None = None
 
 
 DESCRIPTIONS = (
@@ -30,6 +30,14 @@ DESCRIPTIONS = (
         key="spotCutting",
         name="Spot Cut",
         icon="mdi:content-cut",
+    ),
+    GardenaMowerBleSwitchEntityDescription(
+        key="SensorControlEnabled",
+        name="SensorControl",
+        icon="mdi:grass",
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetSensorControlEnabled",
+        value_parameter="enabled",
     ),
     *(
         GardenaMowerBleSwitchEntityDescription(
@@ -101,10 +109,13 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
     async def _async_set_enabled(self, enabled: bool) -> None:
         """Enable or disable the starting point."""
         description = self.entity_description
+        request = {description.value_parameter: enabled}
+        if description.starting_point_id is not None:
+            request["startingPointId"] = description.starting_point_id
+
         result, _ = await self.coordinator.mower.command_response(
             description.set_command,
-            startingPointId=description.starting_point_id,
-            **{description.value_parameter: enabled},
+            **request,
         )
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"{description.name} failed: {result.name}")

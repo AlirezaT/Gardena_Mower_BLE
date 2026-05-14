@@ -17,6 +17,24 @@
         "responseType": "uint32",
         "description": "Remaining charge time."
     },
+    "GetBatteryVoltage": {
+        "major": 4106,
+        "minor": 1,
+        "responseType": "uint16",
+        "description": "Battery voltage."
+    },
+    "GetBatteryCurrent": {
+        "major": 4106,
+        "minor": 8,
+        "responseType": "sint16",
+        "description": "Battery current."
+    },
+    "GetBatteryTemperature": {
+        "major": 4106,
+        "minor": 9,
+        "responseType": "sint16",
+        "description": "Battery temperature."
+    },
     "GetCuttingHeight": {
         "major": 4422,
         "minor": 2,
@@ -30,6 +48,40 @@
             "height": "uint8"
         },
         "description": "Cutting height, from 1 to 9 centimeters."
+    },
+    "GetSensorControlSensitivity": {
+        "major": 4460,
+        "minor": 4,
+        "responseType": "uint8",
+        "description": "Get SensorControl mowing time adjustment sensitivity."
+    },
+    "SetSensorControlEnabled": {
+        "major": 4460,
+        "minor": 5,
+        "requestType": {
+            "enabled": "bool"
+        },
+        "description": "Enable or disable SensorControl mowing time adjustment."
+    },
+    "GetSensorControlEnabled": {
+        "major": 4460,
+        "minor": 6,
+        "responseType": "bool",
+        "description": "Get SensorControl mowing time adjustment state."
+    },
+    "SetSensorControlSensitivity": {
+        "major": 4460,
+        "minor": 7,
+        "requestType": {
+            "sensitivity": "uint8"
+        },
+        "description": "Set SensorControl mowing time adjustment sensitivity."
+    },
+    "GetFrostSensorEnabled": {
+        "major": 4476,
+        "minor": 6,
+        "responseType": "bool",
+        "description": "Get frost sensor enabled state."
     },
     "SetMode": {
         "major": 4586,
@@ -337,6 +389,18 @@
             "mowerTemperature": "sint16"
         },
         "description": "Realtime mower sensor data."
+    },
+    "GetOrientationPitch": {
+        "major": 4958,
+        "minor": 0,
+        "responseType": "sint16",
+        "description": "Orientation pitch angle."
+    },
+    "GetOrientationRoll": {
+        "major": 4958,
+        "minor": 1,
+        "responseType": "sint16",
+        "description": "Orientation roll angle."
     },
 
     "GetDrivePastWire": {
