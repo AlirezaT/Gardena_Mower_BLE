@@ -34,6 +34,7 @@ class Mower(BLEClient):
     def __init__(self, channel_id: int, address, pin=None):
         super().__init__(channel_id, address, pin)
         self.keep_alive_event = asyncio.Event()
+        self.task: asyncio.Task | None = None
 
     async def connect(self, device) -> ResponseResult:
         """
@@ -43,7 +44,9 @@ class Mower(BLEClient):
         """
         status = await super().connect(device)
         if status == ResponseResult.OK:
-            self.task = asyncio.create_task(self._keep_alive())
+            self.keep_alive_event.clear()
+            if self.task is None or self.task.done():
+                self.task = asyncio.create_task(self._keep_alive())
         return status
 
     async def disconnect(self):
@@ -52,7 +55,16 @@ class Mower(BLEClient):
         `connect()` before the Python script exits
         """
         self.keep_alive_event.set()
-        return await super().disconnect()
+        try:
+            return await super().disconnect()
+        finally:
+            if self.task is not None and self.task is not asyncio.current_task():
+                self.task.cancel()
+                try:
+                    await self.task
+                except asyncio.CancelledError:
+                    pass
+                self.task = None
 
     async def _keep_alive(self):
         """

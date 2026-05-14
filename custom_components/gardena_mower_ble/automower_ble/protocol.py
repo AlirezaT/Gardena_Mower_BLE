@@ -325,15 +325,29 @@ class BLEClient:
         if data is None:
             return None
 
-        if len(data) < 3:
-            # We got such a small amount of data, let's try again
-            if chunk := await self._get_response() is None:
-                return None
-            data = data + chunk
+        while data and data[0] != 0x02:
+            packet_start = data.find(b"\x02")
+            if packet_start >= 0:
+                logger.debug(
+                    "Discarding stale response prefix: %s",
+                    binascii.hexlify(data[:packet_start]),
+                )
+                data = data[packet_start:]
+                break
 
-            if len(data) < 3:
-                # Something is wrong
+            logger.debug(
+                "Discarding stale response fragment: %s", binascii.hexlify(data)
+            )
+            data = await self._get_response()
+            if data is None:
                 return None
+
+        while len(data) < 3:
+            # We got such a small amount of data, let's try again.
+            chunk = await self._get_response()
+            if chunk is None:
+                return None
+            data += chunk
 
         length = data[2] + 4
 
@@ -344,9 +358,9 @@ class BLEClient:
                 data = data + await asyncio.wait_for(self.queue.get(), timeout=5)
             except TimeoutError:
                 logger.error(
-                    "Unable to get full response from device: '%s', currently have %s",
-                    str(binascii.hexlify(data)),
+                    "Unable to get full response from device '%s', currently have %s",
                     self.address,
+                    str(binascii.hexlify(data)),
                 )
                 logger.error("Expecting %d bytes, only have %d", length, len(data))
                 return None
