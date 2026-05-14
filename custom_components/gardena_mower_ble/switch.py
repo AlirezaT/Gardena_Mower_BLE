@@ -29,7 +29,7 @@ DESCRIPTIONS = (
     SwitchEntityDescription(
         key="spotCutting",
         name="Spot Cut",
-        icon="mdi:content-cut",
+        icon="mdi:spiral",
     ),
     GardenaMowerBleSwitchEntityDescription(
         key="SensorControlEnabled",

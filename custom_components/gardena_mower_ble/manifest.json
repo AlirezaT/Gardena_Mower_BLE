@@ -14,5 +14,5 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "requirements": ["gardena-bluetooth==2.8.1"],
-  "version": "3.00"
+  "version": "3.01"
 }

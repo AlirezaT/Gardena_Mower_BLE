@@ -45,7 +45,7 @@ DESCRIPTIONS = (
     BinarySensorEntityDescription(
         key="FrostSensorEnabled",
         name="Frost Sensor Enabled",
-        entity_category=EntityCategory.CONFIG,
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:snowflake",
     ),
 )

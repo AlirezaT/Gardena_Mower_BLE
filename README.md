@@ -174,7 +174,7 @@ Notes:
 | Lift | Realtime lift state. |
 | Upside Down | Realtime upside-down state. |
 | In Charging Station | Whether the mower reports being in the charging station. |
-| Frost Sensor Enabled | Frost sensor enabled state. Read-only for now. |
+| Frost Sensor Enabled | Frost sensor enabled state. Read-only diagnostic. |
 
 ### Device Information
 
@@ -207,8 +207,8 @@ Notes:
   out, move the adapter closer or use a better Bluetooth adapter.
 - Not every mower model supports every BLE command. Unsupported features are
   disabled at runtime after the mower reports that a command is unavailable.
-- Frost sensor enable is currently exposed as read-only because the HCI logs
-  confirmed the read command, but not a safe write command.
+- Frost sensor enabled state is exposed as a read-only diagnostic. A safe write
+  command has not been confirmed yet.
 - Some diagnostic values are model and firmware dependent.
 - This is an unofficial community integration and is not affiliated with Gardena
   or Husqvarna.
