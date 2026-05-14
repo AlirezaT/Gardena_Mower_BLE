@@ -1,5 +1,7 @@
 """The Gardena Autoconnect Bluetooth lawn mower platform."""
 
+import asyncio
+
 from .automower_ble.protocol import MowerActivity, MowerState, ResponseResult
 
 from homeassistant.components import bluetooth
@@ -112,10 +114,11 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
-        await self.coordinator.mower.mower_resume()
-        if self._attr_activity is LawnMowerActivity.DOCKED:
-            await self.coordinator.mower.mower_override()
+        await self.coordinator.mower.mower_override(
+            self.coordinator.manual_mowing_duration_hours
+        )
         await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
 
         self._attr_activity = self._get_activity()
         self.async_write_ha_state()
@@ -130,9 +133,14 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             )
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
+        if self.coordinator.data.get("state") == MowerState.PAUSED:
+            await self.coordinator.mower.mower_resume()
+            await asyncio.sleep(1)
+
         await self.coordinator.mower.command("SetOverrideParkUntilNextStart")
         #  await self.coordinator.mower.mower_park()
         await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
 
         self._attr_activity = self._get_activity()
         self.async_write_ha_state()
@@ -150,6 +158,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
 
         await self.coordinator.mower.mower_pause()
         await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
 
         self._attr_activity = self._get_activity()
         self.async_write_ha_state()

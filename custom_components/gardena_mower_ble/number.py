@@ -9,7 +9,7 @@ from homeassistant.components.number import (
     NumberEntityDescription,
     NumberMode,
 )
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfLength
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfLength, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -34,6 +34,19 @@ class GardenaMowerBleNumberEntityDescription(NumberEntityDescription):
 
 
 DESCRIPTIONS = (
+    GardenaMowerBleNumberEntityDescription(
+        key="ManualMowingDuration",
+        name="Manual Mowing Duration",
+        icon="mdi:timer-play-outline",
+        native_min_value=0.5,
+        native_max_value=24,
+        native_step=0.5,
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        set_command="",
+        value_parameter="duration",
+    ),
     GardenaMowerBleNumberEntityDescription(
         key="DrivePastWire",
         name="Drive Past Wire",
@@ -132,6 +145,12 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
         """Set the number value."""
         description = self.entity_description
         LOGGER.debug("Setting %s to %s", description.key, value)
+        if description.key == "ManualMowingDuration":
+            self.coordinator.manual_mowing_duration_hours = value
+            self.coordinator.data[description.key] = value
+            self.async_write_ha_state()
+            return
+
         kwargs = {
             description.value_parameter: round(value * description.scale),
         }

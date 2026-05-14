@@ -10,6 +10,7 @@ from bleak_retry_connector import close_stale_connections_by_address
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, LOGGER
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
     from . import GardenaConfigEntry
 
 SCAN_INTERVAL = timedelta(seconds=8)
+ACTION_REFRESH_DELAY = 4
+DEFAULT_MANUAL_MOWING_DURATION_HOURS = 3.0
 
 
 class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -47,6 +50,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._spot_cutting_status_supported = True
         self._reversing_distance_supported = True
         self._starting_points_supported = True
+        self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
+        self._delayed_refresh_cancel = None
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and any connection."""
@@ -54,6 +59,24 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await super().async_shutdown()
         if self.mower.is_connected():
             await self.mower.disconnect()
+        if self._delayed_refresh_cancel is not None:
+            self._delayed_refresh_cancel()
+            self._delayed_refresh_cancel = None
+
+    def schedule_action_refresh(self) -> None:
+        """Schedule one follow-up refresh after an action state transition."""
+        if self._delayed_refresh_cancel is not None:
+            self._delayed_refresh_cancel()
+
+        async def _refresh(_now) -> None:
+            self._delayed_refresh_cancel = None
+            await self.async_request_refresh()
+
+        self._delayed_refresh_cancel = async_call_later(
+            self.hass,
+            ACTION_REFRESH_DELAY,
+            _refresh,
+        )
 
     async def _async_find_device(self):
         LOGGER.debug("Trying to reconnect")
@@ -75,6 +98,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         
 
         data: dict[str, Any] = {}
+        data["ManualMowingDuration"] = self.manual_mowing_duration_hours
 
         try:
             if not self.mower.is_connected():

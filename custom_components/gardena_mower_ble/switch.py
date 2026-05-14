@@ -133,6 +133,7 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
             raise HomeAssistantError(f"Spot Cut failed: {result.name}")
 
         await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
         """Stop SpotCut."""
@@ -142,6 +143,7 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
             raise HomeAssistantError(f"Stop Spot Cut failed: {result.name}")
 
         await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
 
     async def _async_ensure_connected(self) -> None:
         """Connect to the mower if needed."""
