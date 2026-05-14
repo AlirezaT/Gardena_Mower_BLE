@@ -28,6 +28,7 @@ from bleak import BleakScanner
 logger = logging.getLogger(__name__)
 
 MAX_SCHEDULE_TASKS = 15
+SECONDS_PER_MINUTE = 60
 
 
 class Mower(BLEClient):
@@ -247,8 +248,8 @@ class Mower(BLEClient):
         if result is not ResponseResult.OK or task is None:
             return None
         return TaskInformation(
-            task["start"],
-            task["duration"],
+            task["start"] // SECONDS_PER_MINUTE,
+            (task["duration"] + SECONDS_PER_MINUTE - 1) // SECONDS_PER_MINUTE,
             task["useOnMonday"],
             task["useOnTuesday"],
             task["useOnWednesday"],
@@ -297,8 +298,8 @@ class Mower(BLEClient):
         for task in tasks:
             await self._expect_ok(
                 "AddTask",
-                start=int(task.start_time_in_minutes),
-                duration=int(task.duration_in_minutes),
+                start=int(task.start_time_in_minutes) * SECONDS_PER_MINUTE,
+                duration=int(task.duration_in_minutes) * SECONDS_PER_MINUTE,
                 useOnSunday=bool(task.on_sunday),
                 unknown_1=0,
                 useOnMonday=bool(task.on_monday),
