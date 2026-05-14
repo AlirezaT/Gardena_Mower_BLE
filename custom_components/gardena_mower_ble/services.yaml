@@ -28,3 +28,34 @@ clear_schedule:
       required: false
       selector:
         text: {}
+
+log_error_history:
+  name: Log error history
+  description: Read mower message history and write it to the Home Assistant log.
+  fields:
+    max_entries:
+      name: Maximum entries
+      description: Optional limit for the number of history entries to read.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
+    config_entry_id:
+      name: Config entry ID
+      description: Optional when only one Gardena mower BLE device is loaded.
+      required: false
+      selector:
+        text: {}
+
+refresh_diagnostics:
+  name: Refresh diagnostics
+  description: Perform a one-shot mower refresh, including diagnostic telemetry.
+  fields:
+    config_entry_id:
+      name: Config entry ID
+      description: Optional when only one Gardena mower BLE device is loaded.
+      required: false
+      selector:
+        text: {}

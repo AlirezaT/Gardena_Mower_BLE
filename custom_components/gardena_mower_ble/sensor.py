@@ -8,18 +8,18 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfTime, EntityCategory
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfTemperature,
+    UnitOfTime,
+    EntityCategory,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
+from .automower_ble.error_codes import ErrorCodes
 from .entity import GardenaMowerBleDescriptorEntity
-
-# Optional: add this to const.py later if you want nicer error names
-ERROR_CODE_DESCRIPTIONS = {
-    0: "No error",
-    10: "Unknown mower message",
-}
 
 SPOT_CUTTING_STATES = {
     0: "not_active",
@@ -96,6 +96,147 @@ DESCRIPTIONS = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:home-percent",
+    ),
+    SensorEntityDescription(
+        key="last_message",
+        name="Last Message",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:message-alert",
+    ),
+    SensorEntityDescription(
+        key="modelName",
+        name="Model",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:robot-mower",
+    ),
+    SensorEntityDescription(
+        key="mowerName",
+        name="Mower Name",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:tag",
+    ),
+    SensorEntityDescription(
+        key="serialNumber",
+        name="Serial Number",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:identifier",
+    ),
+    SensorEntityDescription(
+        key="hardwareSerialNumber",
+        name="Hardware Serial Number",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:identifier",
+    ),
+    SensorEntityDescription(
+        key="hardwareRevision",
+        name="Hardware Revision",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:chip",
+    ),
+    SensorEntityDescription(
+        key="productionTime",
+        name="Production Time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:factory",
+    ),
+    SensorEntityDescription(
+        key="nodeIprId",
+        name="Node IPR ID",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:identifier",
+    ),
+    SensorEntityDescription(
+        key="husqvarnaId",
+        name="Husqvarna ID",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:identifier",
+    ),
+    SensorEntityDescription(
+        key="bootSoftwareVersion",
+        name="Boot Software Version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:chip",
+    ),
+    SensorEntityDescription(
+        key="applicationSoftwareVersion",
+        name="Application Software Version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:chip",
+    ),
+    SensorEntityDescription(
+        key="subSoftwareVersion",
+        name="Sub Software Version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:chip",
+    ),
+    SensorEntityDescription(
+        key="pitch",
+        name="Pitch",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:angle-acute",
+    ),
+    SensorEntityDescription(
+        key="roll",
+        name="Roll",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:angle-acute",
+    ),
+    SensorEntityDescription(
+        key="mowerTemperature",
+        name="Mower Temperature",
+        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:thermometer",
+    ),
+    SensorEntityDescription(
+        key="signalQuality",
+        name="Signal Quality",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:signal",
+    ),
+    SensorEntityDescription(
+        key="a0Signal",
+        name="A0 Signal",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:sine-wave",
+    ),
+    SensorEntityDescription(
+        key="fSignal",
+        name="F Signal",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:sine-wave",
+    ),
+    SensorEntityDescription(
+        key="nSignal",
+        name="N Signal",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:sine-wave",
+    ),
+    *(
+        SensorEntityDescription(
+            key=f"guide{guide_id}Signal",
+            name=f"Guide {guide_id} Signal",
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            icon="mdi:sine-wave",
+        )
+        for guide_id in range(1, 4)
+    ),
+    SensorEntityDescription(
+        key="messageFromChargingStation",
+        name="Message From Charging Station",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:home-message",
     ),
 
     # Statistics
@@ -191,10 +332,7 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
             error_code = self.coordinator.data.get("errorCode")
             if error_code is None:
                 return None
-            return ERROR_CODE_DESCRIPTIONS.get(
-                error_code,
-                f"Unknown error ({error_code})",
-            )
+            return _describe_error_code(error_code)
 
         value = self.coordinator.data.get(key)
 
@@ -204,6 +342,9 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
         if key == "spotCutting":
             return SPOT_CUTTING_STATES.get(value, f"unknown_{value}")
 
+        if key == "last_message":
+            return _format_message(value)
+
         # Convert enum values like MowerActivity.PARKED to "parked"
         if hasattr(value, "name"):
             return value.name.lower()
@@ -212,3 +353,40 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
         # Home Assistant will display them nicely because we set
         # device_class=SensorDeviceClass.DURATION.
         return value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int] | None:
+        """Return extra attributes for structured message sensors."""
+        if self.entity_description.key != "last_message":
+            return None
+
+        message = self.coordinator.data.get("last_message")
+        if not isinstance(message, dict):
+            return None
+
+        attributes = dict(message)
+        code = message.get("code")
+        if isinstance(code, int):
+            attributes["description"] = _describe_error_code(code)
+        return attributes
+
+
+def _describe_error_code(error_code: int) -> str:
+    """Return a readable mower error description."""
+    if error_code == 0:
+        return "No error"
+    try:
+        return ErrorCodes(error_code).name.replace("_", " ").title()
+    except ValueError:
+        return f"Unknown error ({error_code})"
+
+
+def _format_message(message: object) -> str | None:
+    """Return a compact display value for a mower message."""
+    if not isinstance(message, dict):
+        return None
+
+    code = message.get("code")
+    if not isinstance(code, int):
+        return None
+    return _describe_error_code(code)

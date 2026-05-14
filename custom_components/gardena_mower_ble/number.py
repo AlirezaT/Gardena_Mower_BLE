@@ -151,6 +151,25 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
             self.async_write_ha_state()
             return
 
+        if (
+            description.value_parameter == "proportion"
+            and description.starting_point_id is not None
+        ):
+            other_total = sum(
+                int(
+                    self.coordinator.data.get(
+                        f"StartingPoint{starting_point_id}Proportion"
+                    )
+                    or 0
+                )
+                for starting_point_id in range(1, 4)
+                if starting_point_id != description.starting_point_id
+            )
+            if other_total + round(value) > 100:
+                raise HomeAssistantError(
+                    "Starting point mowing shares cannot exceed 100% total"
+                )
+
         kwargs = {
             description.value_parameter: round(value * description.scale),
         }

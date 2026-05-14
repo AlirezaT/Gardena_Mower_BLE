@@ -1,10 +1,11 @@
 """Provides the DataUpdateCoordinator."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from .automower_ble.mower import Mower
 from .automower_ble.protocol import ResponseResult
+from .automower_ble.error_codes import ErrorCodes
 from bleak import BleakError
 from bleak_retry_connector import close_stale_connections_by_address
 
@@ -50,6 +51,10 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._spot_cutting_status_supported = True
         self._reversing_distance_supported = True
         self._starting_points_supported = True
+        self._comboard_sensor_data_supported = True
+        self._signal_quality_supported = True
+        self._unsupported_static_commands: set[str] = set()
+        self._static_data: dict[str, Any] = {}
         self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
         self._delayed_refresh_cancel = None
 
@@ -99,6 +104,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         data: dict[str, Any] = {}
         data["ManualMowingDuration"] = self.manual_mowing_duration_hours
+        data["modelName"] = self.model
 
         try:
             if not self.mower.is_connected():
@@ -139,6 +145,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             data["RemainingChargingTime"] = await self.mower.command("GetRemainingChargingTime")
             LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
+
+            await self._async_update_static_info(data)
 
             try:
                 data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
@@ -239,6 +247,48 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
+            if self._comboard_sensor_data_supported:
+                try:
+                    result, sensor_data = await self.mower.command_response(
+                        "GetComboardSensorData", warn_on_error=False
+                    )
+                    if result is ResponseResult.OK and sensor_data is not None:
+                        data.update(sensor_data)
+                        LOGGER.debug("ComboardSensorData: %s", sensor_data)
+                    else:
+                        self._comboard_sensor_data_supported = False
+                        LOGGER.debug(
+                            "GetComboardSensorData returned %s - disabling realtime sensor polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._comboard_sensor_data_supported = False
+                    LOGGER.debug(
+                        "GetComboardSensorData failed - disabling realtime sensor polling",
+                        exc_info=True,
+                    )
+
+            if self._signal_quality_supported:
+                try:
+                    result, signal_quality = await self.mower.command_response(
+                        "GetSignalQuality", warn_on_error=False
+                    )
+                    if result is ResponseResult.OK and signal_quality is not None:
+                        data.update(signal_quality)
+                        LOGGER.debug("SignalQuality: %s", signal_quality)
+                    else:
+                        self._signal_quality_supported = False
+                        LOGGER.debug(
+                            "GetSignalQuality returned %s - disabling signal quality polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._signal_quality_supported = False
+                    LOGGER.debug(
+                        "GetSignalQuality failed - disabling signal quality polling",
+                        exc_info=True,
+                    )
+
             # workaround for issue21
             try:
                 data["statistics"] = await self.mower.command("GetAllStatistics")
@@ -259,8 +309,13 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["operatorstate"] = await self.mower.command("IsOperatorLoggedIn")
             LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
 
-            data["last_message"] = await self.mower.command("GetMessage", messageId=0)
-            LOGGER.debug("last_message: " + str(data["last_message"]))
+            try:
+                data["last_message"] = await self.mower.command(
+                    "GetMessage", messageId=0
+                )
+                LOGGER.debug("last_message: " + str(data["last_message"]))
+            except (ValueError, IndexError) as err:
+                LOGGER.debug("Unable to read last mower message: %s", err)
 
             self._last_successful_update = datetime.now()
             self._last_data = data
@@ -274,3 +329,96 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         LOGGER.debug("MOWER DATA: %s", data)
 
         return data
+
+    async def _async_update_static_info(self, data: dict[str, Any]) -> None:
+        """Fetch mostly-static mower information and copy it into coordinator data."""
+        static_commands = {
+            "mowerName": "GetUserMowerNameAsAsciiString",
+            "serialNumber": "GetSerialNumber",
+            "hardwareSerialNumber": "GetHwSerialNumber",
+            "hardwareRevision": "GetHardwareRevision",
+            "productionTime": "GetProductionTime",
+            "nodeIprId": "GetNodeIprId",
+            "husqvarnaId": "GetHusqvarnaId",
+            "bootSoftwareVersion": "GetSwVersionStringBoot",
+            "applicationSoftwareVersion": "GetSwVersionStringAppl",
+            "subSoftwareVersion": "GetSwVersionStringSub",
+        }
+
+        for key, command_name in static_commands.items():
+            if (
+                key in self._static_data
+                or command_name in self._unsupported_static_commands
+            ):
+                continue
+            try:
+                result, value = await self.mower.command_response(
+                    command_name, warn_on_error=False
+                )
+            except (KeyError, ValueError, IndexError):
+                self._unsupported_static_commands.add(command_name)
+                LOGGER.debug("%s failed - disabling static info polling", command_name)
+                continue
+
+            if result is not ResponseResult.OK or value is None:
+                self._unsupported_static_commands.add(command_name)
+                LOGGER.debug(
+                    "%s returned %s - disabling static info polling",
+                    command_name,
+                    result.name,
+                )
+                continue
+
+            if key == "productionTime":
+                value = datetime.fromtimestamp(value, timezone.utc)
+            self._static_data[key] = value
+
+        data.update(self._static_data)
+
+    async def log_error_history(self, max_entries: int | None = None) -> None:
+        """Read mower message history and write it to the HA log."""
+        count = await self.mower.command("GetNumberOfMessages")
+        if count is None:
+            LOGGER.warning("Unable to read mower message history count")
+            return
+
+        entries_to_read = min(int(count), max_entries or int(count))
+        LOGGER.info(
+            "Reading %s of %s mower message history entries", entries_to_read, count
+        )
+        for message_id in range(entries_to_read):
+            try:
+                message = await self.mower.command("GetMessage", messageId=message_id)
+            except (ValueError, IndexError) as err:
+                LOGGER.warning("Unable to read mower message %s: %s", message_id, err)
+                continue
+            if not message:
+                continue
+
+            code = message.get("code")
+            timestamp = message.get("time")
+            time_text = (
+                datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+                if isinstance(timestamp, int) and timestamp > 0
+                else "unknown time"
+            )
+            LOGGER.info(
+                "Mower message %s: %s, code=%s, severity=%s, time=%s",
+                message_id,
+                self._describe_error_code(code),
+                code,
+                message.get("severity"),
+                time_text,
+            )
+
+    @staticmethod
+    def _describe_error_code(error_code: object) -> str:
+        """Return a readable mower error description."""
+        if not isinstance(error_code, int):
+            return "Unknown error"
+        if error_code == 0:
+            return "No error"
+        try:
+            return ErrorCodes(error_code).name.replace("_", " ").title()
+        except ValueError:
+            return f"Unknown error ({error_code})"

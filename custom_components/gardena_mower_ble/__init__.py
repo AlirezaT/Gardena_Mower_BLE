@@ -22,6 +22,8 @@ from .coordinator import GardenaCoordinator
 type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
 PLATFORMS = [
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.CALENDAR,
     Platform.LAWN_MOWER,
     Platform.NUMBER,
@@ -32,6 +34,8 @@ PLATFORMS = [
 
 SERVICE_CLEAR_SCHEDULE = "clear_schedule"
 SERVICE_DELETE_SCHEDULE = "delete_schedule"
+SERVICE_LOG_ERROR_HISTORY = "log_error_history"
+SERVICE_REFRESH_DIAGNOSTICS = "refresh_diagnostics"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> bool:
@@ -110,6 +114,21 @@ def _async_register_services(hass: HomeAssistant) -> None:
         await coordinator.mower.clear_tasks()
         await coordinator.async_request_refresh()
 
+    async def async_log_error_history(call: ServiceCall) -> None:
+        """Read mower message history and write it to the integration log."""
+        coordinator = await _async_get_service_coordinator(
+            hass, call.data.get("config_entry_id")
+        )
+        max_entries = call.data.get("max_entries")
+        await coordinator.log_error_history(max_entries)
+
+    async def async_refresh_diagnostics(call: ServiceCall) -> None:
+        """Request a one-shot mower refresh."""
+        coordinator = await _async_get_service_coordinator(
+            hass, call.data.get("config_entry_id")
+        )
+        await coordinator.async_request_refresh()
+
     if not hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE):
         hass.services.async_register(
             DOMAIN,
@@ -128,6 +147,29 @@ def _async_register_services(hass: HomeAssistant) -> None:
             DOMAIN,
             SERVICE_CLEAR_SCHEDULE,
             async_clear_schedule,
+            schema=vol.Schema({vol.Optional("config_entry_id"): str}),
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_LOG_ERROR_HISTORY):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_LOG_ERROR_HISTORY,
+            async_log_error_history,
+            schema=vol.Schema(
+                {
+                    vol.Optional("max_entries"): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=100)
+                    ),
+                    vol.Optional("config_entry_id"): str,
+                }
+            ),
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_DIAGNOSTICS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH_DIAGNOSTICS,
+            async_refresh_diagnostics,
             schema=vol.Schema({vol.Optional("config_entry_id"): str}),
         )
 

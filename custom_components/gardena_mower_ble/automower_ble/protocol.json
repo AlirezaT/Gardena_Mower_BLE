@@ -307,6 +307,38 @@
         }
     },
 
+    "GetSignalQuality": {
+        "major": 20,
+        "minor": 21,
+        "responseType": {
+            "signalQuality": "uint8",
+            "a0Signal": "sint16",
+            "fSignal": "sint16",
+            "guide1Signal": "sint16",
+            "guide2Signal": "sint16",
+            "messageFromChargingStation": "uint16",
+            "inChargingStation": "uint8",
+            "nSignal": "sint16",
+            "guide3Signal": "sint16"
+        },
+        "description": "Realtime loop and guide signal quality."
+    },
+
+    "GetComboardSensorData": {
+        "major": 20,
+        "minor": 4,
+        "responseType": {
+            "collision": "uint8",
+            "lift": "uint8",
+            "pitch": "sint16",
+            "roll": "sint16",
+            "zAcceleration": "sint16",
+            "upsideDown": "uint8",
+            "mowerTemperature": "sint16"
+        },
+        "description": "Realtime mower sensor data."
+    },
+
     "GetDrivePastWire": {
         "major": 4712,
         "minor": 0,
@@ -461,5 +493,61 @@
         "minor": 24,
         "responseType": "uint16",
         "description": "Stop spot cutting."
+    },
+
+    "GetSwVersionStringBoot": {
+        "major": 4720,
+        "minor": 0,
+        "responseType": "ascii",
+        "description": "Boot software version string."
+    },
+
+    "GetSwVersionStringAppl": {
+        "major": 4720,
+        "minor": 1,
+        "responseType": "ascii",
+        "description": "Application software version string."
+    },
+
+    "GetSwVersionStringSub": {
+        "major": 4720,
+        "minor": 2,
+        "responseType": "ascii",
+        "description": "Sub software version string."
+    },
+
+    "GetProductionTime": {
+        "major": 4758,
+        "minor": 1,
+        "responseType": "tUnixTime",
+        "description": "Mower production time."
+    },
+
+    "GetNodeIprId": {
+        "major": 4758,
+        "minor": 2,
+        "responseType": "ascii",
+        "description": "Node IPR ID."
+    },
+
+    "GetHusqvarnaId": {
+        "major": 4758,
+        "minor": 3,
+        "responseType": "ascii",
+        "description": "Husqvarna ID."
+    },
+
+    "GetHwSerialNumber": {
+        "major": 4758,
+        "minor": 4,
+        "responseType": "ascii",
+        "description": "Hardware serial number."
+    },
+
+    "GetHardwareRevision": {
+        "major": 4758,
+        "minor": 5,
+        "responseType": "uint16",
+        "description": "Hardware revision."
     }
 }

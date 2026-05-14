@@ -206,6 +206,11 @@ class Command:
                     data[dpos : dpos + 2], byteorder="little"
                 )
                 dpos += 2
+            elif dtype == "sint16":
+                response[name] = int.from_bytes(
+                    data[dpos : dpos + 2], byteorder="little", signed=True
+                )
+                dpos += 2
             elif (dtype == "uint8") or (dtype == "bool"):
                 response[name] = data[dpos]
                 dpos += 1
