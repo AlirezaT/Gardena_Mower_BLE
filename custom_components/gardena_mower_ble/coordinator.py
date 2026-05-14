@@ -45,6 +45,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.model = model
         self.mower = mower
         self._spot_cutting_status_supported = True
+        self._reversing_distance_supported = True
         self._starting_points_supported = True
 
     async def async_shutdown(self) -> None:
@@ -121,6 +122,28 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except KeyError:
                 LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
 
+            if self._reversing_distance_supported:
+                try:
+                    result, reversing_distance = await self.mower.command_response(
+                        "GetReversingDistance",
+                        warn_on_error=False,
+                    )
+                    if result is ResponseResult.OK and reversing_distance is not None:
+                        data["ReversingDistance"] = reversing_distance
+                        LOGGER.debug("ReversingDistance: %s", reversing_distance)
+                    else:
+                        self._reversing_distance_supported = False
+                        LOGGER.debug(
+                            "GetReversingDistance returned %s - disabling reversing distance polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._reversing_distance_supported = False
+                    LOGGER.debug(
+                        "GetReversingDistance failed - disabling reversing distance polling",
+                        exc_info=True,
+                    )
+
             if self._starting_points_supported:
                 try:
                     starting_point_proportions = []
@@ -131,9 +154,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             startingPointId=starting_point_id,
                         )
                         if result is not ResponseResult.OK or starting_point is None:
-                            self._starting_points_supported = False
                             LOGGER.debug(
-                                "GetStartingPoint %s returned %s - disabling starting point polling",
+                                "GetStartingPoint %s returned %s - stopping starting point polling",
                                 starting_point_id,
                                 result.name,
                             )
@@ -152,10 +174,18 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                         LOGGER.debug("%s: %s", prefix, starting_point)
 
-                    if len(starting_point_proportions) == 3:
-                        data["StartingPointChargingStationProportion"] = max(
-                            0,
-                            100 - sum(starting_point_proportions),
+                    if starting_point_proportions:
+                        data.setdefault(
+                            "StartingPointChargingStationProportion",
+                            max(
+                                0,
+                                100 - sum(starting_point_proportions),
+                            ),
+                        )
+                    else:
+                        self._starting_points_supported = False
+                        LOGGER.debug(
+                            "No starting points returned - disabling starting point polling"
                         )
                 except (KeyError, ValueError, IndexError):
                     self._starting_points_supported = False

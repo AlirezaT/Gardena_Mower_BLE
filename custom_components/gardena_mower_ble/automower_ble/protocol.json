@@ -338,6 +338,31 @@
         "description": "Subscribe to driving settings events."
     },
 
+    "GetReversingDistance": {
+        "major": 4716,
+        "minor": 0,
+        "responseType": "uint16",
+        "description": "Get distance from charging station to first starting point in millimeters."
+    },
+
+    "SetReversingDistance": {
+        "major": 4716,
+        "minor": 1,
+        "requestType": {
+            "distance": "uint16"
+        },
+        "description": "Set distance from charging station to first starting point in millimeters."
+    },
+
+    "GetAllLeaveChargingStationSettings": {
+        "major": 4716,
+        "minor": 15,
+        "responseType": {
+            "reversingDistance": "uint16"
+        },
+        "description": "Get all leave charging station settings."
+    },
+
     "GetStartingPoint": {
         "major": 4706,
         "minor": 21,

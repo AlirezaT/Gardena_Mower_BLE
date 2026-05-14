@@ -20,6 +20,7 @@ from .const import LOGGER
 from .entity import GardenaMowerBleDescriptorEntity
 
 DRIVE_PAST_WIRE_SCALE = 10
+REVERSING_DISTANCE_SCALE = 10
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -46,6 +47,20 @@ DESCRIPTIONS = (
         set_command="SetDrivePastWire",
         value_parameter="distance",
         scale=DRIVE_PAST_WIRE_SCALE,
+    ),
+    GardenaMowerBleNumberEntityDescription(
+        key="ReversingDistance",
+        name="Charging Station Starting Point Distance",
+        icon="mdi:map-marker-distance",
+        native_min_value=60,
+        native_max_value=250,
+        native_step=1,
+        native_unit_of_measurement=UnitOfLength.CENTIMETERS,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetReversingDistance",
+        value_parameter="distance",
+        scale=REVERSING_DISTANCE_SCALE,
     ),
     *(
         GardenaMowerBleNumberEntityDescription(
