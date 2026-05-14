@@ -1,7 +1,7 @@
 """Provides the DataUpdateCoordinator."""
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .automower_ble.mower import Mower
 from .automower_ble.protocol import ResponseResult
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 SCAN_INTERVAL = timedelta(seconds=8)
 
 
-class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
+class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching data."""
 
     def __init__(
@@ -45,6 +45,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
         self.model = model
         self.mower = mower
         self._spot_cutting_status_supported = True
+        self._starting_points_supported = True
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and any connection."""
@@ -67,12 +68,12 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
         except BleakError as err:
             raise UpdateFailed("Failed to connect") from err
 
-    async def _async_update_data(self) -> dict[str, str | int]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Poll the device."""
         LOGGER.debug("Polling device")
         
 
-        data: dict[str, str | int] = {}
+        data: dict[str, Any] = {}
 
         try:
             if not self.mower.is_connected():
@@ -119,6 +120,39 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, str | int]]):
                 LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
             except KeyError:
                 LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
+
+            if self._starting_points_supported:
+                try:
+                    for starting_point_id in range(1, 4):
+                        result, starting_point = await self.mower.command_response(
+                            "GetStartingPoint",
+                            warn_on_error=False,
+                            startingPointId=starting_point_id,
+                        )
+                        if result is not ResponseResult.OK or starting_point is None:
+                            self._starting_points_supported = False
+                            LOGGER.debug(
+                                "GetStartingPoint %s returned %s - disabling starting point polling",
+                                starting_point_id,
+                                result.name,
+                            )
+                            break
+
+                        prefix = f"StartingPoint{starting_point_id}"
+                        data[f"{prefix}Enabled"] = bool(starting_point["enabled"])
+                        data[f"{prefix}Proportion"] = starting_point["proportion"]
+                        data[f"{prefix}Wire"] = starting_point["wire"]
+                        data[f"{prefix}Distance"] = starting_point["distance"]
+                        data[f"{prefix}CorridorCut"] = bool(
+                            starting_point["corridorCut"]
+                        )
+                        LOGGER.debug("%s: %s", prefix, starting_point)
+                except (KeyError, ValueError, IndexError):
+                    self._starting_points_supported = False
+                    LOGGER.debug(
+                        "GetStartingPoint failed - disabling starting point polling",
+                        exc_info=True,
+                    )
 
             if self._spot_cutting_status_supported:
                 try:

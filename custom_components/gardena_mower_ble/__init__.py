@@ -27,6 +27,7 @@ PLATFORMS = [
     Platform.LAWN_MOWER,
     Platform.NUMBER,
     Platform.SENSOR,
+    Platform.SWITCH,
 ]
 
 SERVICE_CLEAR_SCHEDULE = "clear_schedule"

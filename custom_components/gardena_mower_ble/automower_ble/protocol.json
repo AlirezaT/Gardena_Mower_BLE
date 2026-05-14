@@ -338,6 +338,52 @@
         "description": "Subscribe to driving settings events."
     },
 
+    "GetStartingPoint": {
+        "major": 4706,
+        "minor": 21,
+        "requestType": {
+            "startingPointId": "uint8"
+        },
+        "responseType": {
+            "enabled": "bool",
+            "proportion": "uint8",
+            "wire": "uint8",
+            "distance": "uint16",
+            "corridorCut": "bool"
+        },
+        "description": "Get manual starting point settings."
+    },
+
+    "SetStartingPointEnabled": {
+        "major": 4706,
+        "minor": 7,
+        "requestType": {
+            "startingPointId": "uint8",
+            "enabled": "bool"
+        },
+        "description": "Enable or disable a manual starting point."
+    },
+
+    "SetStartingPointDistance": {
+        "major": 4706,
+        "minor": 11,
+        "requestType": {
+            "startingPointId": "uint8",
+            "distance": "uint16"
+        },
+        "description": "Set manual starting point distance from charging station in meters."
+    },
+
+    "SetStartingPointProportion": {
+        "major": 4706,
+        "minor": 13,
+        "requestType": {
+            "startingPointId": "uint8",
+            "proportion": "uint8"
+        },
+        "description": "Set manual starting point mowing share in percent."
+    },
+
     "GetSpotCutting": {
         "major": 4,
         "minor": 13,
