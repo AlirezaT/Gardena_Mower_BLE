@@ -228,14 +228,14 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         fallback: TaskInformation | None = None,
     ) -> TaskInformation:
         """Convert a HA calendar event to a mower schedule task."""
-        start = event.get("start")
-        end = event.get("end")
+        start = _event_datetime(event, "start", "start_date_time", "dtstart")
+        end = _event_datetime(event, "end", "end_date_time", "dtend")
 
         if start is None and fallback is not None:
             start_minutes = fallback.start_time_in_minutes
             duration_minutes = fallback.duration_in_minutes
             selected_days = _task_days(fallback)
-        elif isinstance(start, dt.datetime) and isinstance(end, dt.datetime):
+        elif start is not None and end is not None:
             start = dt_util.as_local(start)
             end = dt_util.as_local(end)
             start_minutes = start.hour * 60 + start.minute
@@ -355,6 +355,19 @@ def _format_minutes(minutes: int) -> str:
     """Format minutes after midnight as HH:MM."""
     minutes = minutes % (24 * 60)
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _event_datetime(event: dict[str, Any], *keys: str) -> dt.datetime | None:
+    """Return a datetime from one of Home Assistant's calendar event fields."""
+    for key in keys:
+        value = event.get(key)
+        if isinstance(value, dt.datetime):
+            return value
+        if isinstance(value, str):
+            parsed = dt_util.parse_datetime(value)
+            if parsed is not None:
+                return parsed
+    return None
 
 
 def _days_from_rrule(rrule: str | None) -> list[bool] | None:
