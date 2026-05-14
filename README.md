@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/custom_components/gardena_mower_ble/brand/logo.png" alt="Gardena Mower BLE" width="360">
+  <img src="https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/brand/logo.png" alt="Gardena Mower BLE" width="360">
 </p>
 
 # Gardena Mower BLE
@@ -54,6 +54,47 @@ communication.
    `custom_components` directory.
 2. Restart Home Assistant.
 3. Add the integration from `Settings -> Devices & services`.
+
+## ESPHome Bluetooth Proxy
+
+This integration can work through a Home Assistant Bluetooth adapter or through
+an ESPHome Bluetooth proxy. During development and testing, an ESP32 running
+ESPHome Bluetooth proxy was used successfully.
+
+Example ESPHome configuration:
+
+```yaml
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+    continuous: false
+    duration: 50sec
+
+bluetooth_proxy:
+  active: true
+  cache_services: true
+
+time:
+  - platform: homeassistant
+    on_time:
+      - seconds: 0
+        minutes: "*"
+        then:
+          - esp32_ble_tracker.start_scan:
+```
+
+Notes:
+
+- Do not publish your mower MAC address or PIN/passkey in public logs or config
+  examples.
+- `bluetooth_proxy.active: true` is needed for Home Assistant to make active BLE
+  connections through the proxy.
+- `cache_services: true` helps avoid repeated full service discovery.
+- Non-continuous scanning is gentler on the BLE environment. The example starts
+  a scan once per minute for 50 seconds.
+- Avoid configuring the mower as an ESPHome `ble_client` at the same time as
+  Home Assistant is using it. Only one client can maintain the mower connection
+  reliably.
 
 ## Supported Controls
 
