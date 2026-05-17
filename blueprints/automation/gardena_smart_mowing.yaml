@@ -1,0 +1,410 @@
+blueprint:
+  name: Smart dry-weather mowing
+  description: >-
+    Calculate mowing sessions from lawn area and mower capacity, then start a
+    Home Assistant lawn mower only when weather and optional wetness blockers say
+    the grass should be dry enough. Designed for Gardena Mower BLE, but generic
+    enough for any lawn_mower entity with a manual duration number.
+  domain: automation
+  input:
+    mower_entity:
+      name: Mower
+      description: The lawn_mower entity to start and dock.
+      selector:
+        entity:
+          domain: lawn_mower
+    manual_duration_number:
+      name: Manual mowing duration number
+      description: Number entity that controls manual mowing duration in hours.
+      selector:
+        entity:
+          domain: number
+    weather_entity:
+      name: Weather entity
+      description: Weather entity used for current conditions and hourly forecast.
+      selector:
+        entity:
+          domain: weather
+    last_rain_helper:
+      name: Last rain helper
+      description: Input datetime helper used to remember when rain/wetness was last detected.
+      selector:
+        entity:
+          domain: input_datetime
+    last_mow_helper:
+      name: Last mow helper
+      description: Input datetime helper used to remember when the blueprint last started mowing.
+      selector:
+        entity:
+          domain: input_datetime
+    wetness_blockers:
+      name: Optional wetness blockers
+      description: Optional binary sensors or helpers. If any is on, mowing is blocked.
+      default: []
+      selector:
+        entity:
+          multiple: true
+    lawn_area_m2:
+      name: Lawn area
+      description: Lawn area in square meters.
+      default: 250
+      selector:
+        number:
+          min: 10
+          max: 5000
+          step: 10
+          unit_of_measurement: m2
+          mode: box
+    mower_capacity_m2_per_hour:
+      name: Mower capacity
+      description: Effective square meters the mower can handle per mowing hour.
+      default: 60
+      selector:
+        number:
+          min: 5
+          max: 500
+          step: 5
+          unit_of_measurement: m2/h
+          mode: box
+    weekly_coverage_multiplier:
+      name: Weekly coverage multiplier
+      description: >-
+        How many times the total lawn area should be covered per week. Use 1.0
+        as a baseline and increase for faster growing seasons.
+      default: 1.0
+      selector:
+        number:
+          min: 0.25
+          max: 5
+          step: 0.05
+          mode: box
+    min_sessions_per_week:
+      name: Minimum sessions per week
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 14
+          step: 1
+          mode: box
+    max_sessions_per_week:
+      name: Maximum sessions per week
+      default: 7
+      selector:
+        number:
+          min: 1
+          max: 21
+          step: 1
+          mode: box
+    min_session_minutes:
+      name: Minimum session length
+      default: 30
+      selector:
+        number:
+          min: 10
+          max: 240
+          step: 5
+          unit_of_measurement: min
+          mode: box
+    max_session_minutes:
+      name: Maximum session length
+      default: 180
+      selector:
+        number:
+          min: 30
+          max: 720
+          step: 15
+          unit_of_measurement: min
+          mode: box
+    minimum_gap_override_hours:
+      name: Minimum gap override
+      description: Set to 0 to use the calculated spacing from sessions per week.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 168
+          step: 1
+          unit_of_measurement: h
+          mode: box
+    allowed_start_time:
+      name: Earliest mowing start
+      default: "09:00:00"
+      selector:
+        time:
+    allowed_end_time:
+      name: Latest mowing start
+      default: "18:00:00"
+      selector:
+        time:
+    check_minutes_pattern:
+      name: Check interval
+      description: "Time pattern minutes field. Examples: /15, /30, 0."
+      default: "/30"
+      selector:
+        select:
+          options:
+            - "/15"
+            - "/30"
+            - "0"
+    forecast_lookahead_hours:
+      name: Rain forecast lookahead
+      description: Do not start if meaningful rain is forecast within this many hours.
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 24
+          step: 1
+          unit_of_measurement: h
+          mode: box
+    precipitation_threshold_mm:
+      name: Rain amount threshold
+      description: Forecast precipitation amount that blocks mowing.
+      default: 0.2
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.1
+          unit_of_measurement: mm
+          mode: box
+    precipitation_probability_threshold:
+      name: Rain probability threshold
+      description: Forecast precipitation probability that blocks mowing.
+      default: 50
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+    base_dry_hours_after_rain:
+      name: Base drying time after rain
+      default: 4
+      selector:
+        number:
+          min: 0
+          max: 48
+          step: 0.5
+          unit_of_measurement: h
+          mode: box
+    humidity_block_threshold:
+      name: Humidity block threshold
+      description: Block mowing above this outdoor humidity value.
+      default: 92
+      selector:
+        number:
+          min: 50
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
+    low_temperature_threshold:
+      name: Low temperature threshold
+      description: Add extra drying time below this temperature.
+      default: 10
+      selector:
+        number:
+          min: -10
+          max: 25
+          step: 1
+          unit_of_measurement: C
+          mode: box
+    extra_dry_hours_when_cold_or_humid:
+      name: Extra drying time when cold or humid
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 24
+          step: 0.5
+          unit_of_measurement: h
+          mode: box
+    park_when_wet:
+      name: Dock mower when rain/wetness is detected
+      default: true
+      selector:
+        boolean:
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time_pattern
+    minutes: !input check_minutes_pattern
+
+variables:
+  mower_entity: !input mower_entity
+  manual_duration_number: !input manual_duration_number
+  weather_entity: !input weather_entity
+  last_rain_helper: !input last_rain_helper
+  last_mow_helper: !input last_mow_helper
+  wetness_blockers: !input wetness_blockers
+  lawn_area_m2: !input lawn_area_m2
+  mower_capacity_m2_per_hour: !input mower_capacity_m2_per_hour
+  weekly_coverage_multiplier: !input weekly_coverage_multiplier
+  min_sessions_per_week: !input min_sessions_per_week
+  max_sessions_per_week: !input max_sessions_per_week
+  min_session_minutes: !input min_session_minutes
+  max_session_minutes: !input max_session_minutes
+  minimum_gap_override_hours: !input minimum_gap_override_hours
+  allowed_start_time: !input allowed_start_time
+  allowed_end_time: !input allowed_end_time
+  forecast_lookahead_hours: !input forecast_lookahead_hours
+  precipitation_threshold_mm: !input precipitation_threshold_mm
+  precipitation_probability_threshold: !input precipitation_probability_threshold
+  base_dry_hours_after_rain: !input base_dry_hours_after_rain
+  humidity_block_threshold: !input humidity_block_threshold
+  low_temperature_threshold: !input low_temperature_threshold
+  extra_dry_hours_when_cold_or_humid: !input extra_dry_hours_when_cold_or_humid
+  park_when_wet: !input park_when_wet
+  rain_conditions:
+    - rainy
+    - pouring
+    - lightning-rainy
+    - snowy-rainy
+    - hail
+    - snowy
+  mower_state: "{{ states(mower_entity) }}"
+  weather_condition: "{{ states(weather_entity) }}"
+  outdoor_humidity: "{{ state_attr(weather_entity, 'humidity') | float(0) }}"
+  outdoor_temperature: "{{ state_attr(weather_entity, 'temperature') | float(99) }}"
+  blocker_active: >-
+    {% set entities = wetness_blockers if wetness_blockers is iterable and wetness_blockers is not string else [wetness_blockers] %}
+    {% set ns = namespace(active=false) %}
+    {% for entity in entities %}
+      {% if entity and states(entity) in ['on', 'wet', 'true', 'rainy'] %}
+        {% set ns.active = true %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.active }}
+  current_wet: >-
+    {{ weather_condition in rain_conditions
+       or blocker_active | bool
+       or outdoor_humidity | float(0) >= humidity_block_threshold | float(92) }}
+  last_rain_age_hours: >-
+    {% set ts = as_timestamp(states(last_rain_helper), none) %}
+    {% if ts is none %}
+      9999
+    {% else %}
+      {{ ((as_timestamp(now()) - ts) / 3600) | float(0) }}
+    {% endif %}
+  last_mow_age_hours: >-
+    {% set ts = as_timestamp(states(last_mow_helper), none) %}
+    {% if ts is none %}
+      9999
+    {% else %}
+      {{ ((as_timestamp(now()) - ts) / 3600) | float(0) }}
+    {% endif %}
+  dynamic_dry_hours: >-
+    {% set extra = extra_dry_hours_when_cold_or_humid | float(0) %}
+    {% set hours = base_dry_hours_after_rain | float(0) %}
+    {% if outdoor_humidity | float(0) >= 85 %}
+      {% set hours = hours + extra %}
+    {% endif %}
+    {% if outdoor_temperature | float(99) <= low_temperature_threshold | float(10) %}
+      {% set hours = hours + extra %}
+    {% endif %}
+    {{ hours }}
+  weekly_minutes_needed: >-
+    {% set capacity = mower_capacity_m2_per_hour | float(1) %}
+    {% if capacity <= 0 %}
+      0
+    {% else %}
+      {{ ((lawn_area_m2 | float(0)) / capacity * (weekly_coverage_multiplier | float(1)) * 60) | round(0, 'ceil') }}
+    {% endif %}
+  calculated_sessions_per_week: >-
+    {% set weekly = weekly_minutes_needed | float(0) %}
+    {% set max_minutes = max_session_minutes | float(180) %}
+    {% set raw_sessions = ((weekly / max_minutes) | round(0, 'ceil')) | int %}
+    {% set raw_sessions = [raw_sessions, min_sessions_per_week | int(1)] | max %}
+    {{ [raw_sessions, max_sessions_per_week | int(7)] | min }}
+  calculated_session_minutes: >-
+    {% set sessions = calculated_sessions_per_week | int(1) %}
+    {% set raw_minutes = ((weekly_minutes_needed | float(0)) / sessions) | round(0, 'ceil') %}
+    {% set raw_minutes = [raw_minutes, min_session_minutes | float(30)] | max %}
+    {{ [raw_minutes, max_session_minutes | float(180)] | min }}
+  calculated_session_hours: >-
+    {{ (((calculated_session_minutes | float(30)) / 60 * 2) | round(0, 'ceil') / 2) | float }}
+  calculated_gap_hours: >-
+    {% if minimum_gap_override_hours | float(0) > 0 %}
+      {{ minimum_gap_override_hours | float(0) }}
+    {% else %}
+      {{ (168 / (calculated_sessions_per_week | int(1))) | round(1) }}
+    {% endif %}
+  within_allowed_time: >-
+    {% set start = today_at(allowed_start_time) %}
+    {% set end = today_at(allowed_end_time) %}
+    {% if start <= end %}
+      {{ start <= now() <= end }}
+    {% else %}
+      {{ now() >= start or now() <= end }}
+    {% endif %}
+
+action:
+  - action: weather.get_forecasts
+    target:
+      entity_id: !input weather_entity
+    data:
+      type: hourly
+    response_variable: weather_forecast
+
+  - variables:
+      hourly_forecast: "{{ weather_forecast[weather_entity]['forecast'] if weather_entity in weather_forecast else [] }}"
+      rain_forecast_soon: >-
+        {% set ns = namespace(rain=false) %}
+        {% for item in hourly_forecast[: forecast_lookahead_hours | int(3)] %}
+          {% set condition = item.condition | default('') %}
+          {% set precipitation = item.precipitation | default(0) | float(0) %}
+          {% set probability = item.precipitation_probability | default(0) | float(0) %}
+          {% if condition in rain_conditions
+                or precipitation >= precipitation_threshold_mm | float(0.2)
+                or probability >= precipitation_probability_threshold | float(50) %}
+            {% set ns.rain = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.rain }}
+      safe_to_mow: >-
+        {{ within_allowed_time | bool
+           and not current_wet | bool
+           and not rain_forecast_soon | bool
+           and last_rain_age_hours | float(9999) >= dynamic_dry_hours | float(4)
+           and last_mow_age_hours | float(9999) >= calculated_gap_hours | float(24)
+           and mower_state not in ['mowing', 'returning', 'error', 'unavailable', 'unknown'] }}
+
+  - choose:
+      - conditions: "{{ current_wet | bool }}"
+        sequence:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: !input last_rain_helper
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  - choose:
+      - conditions: "{{ park_when_wet | bool and current_wet | bool and mower_state == 'mowing' }}"
+        sequence:
+          - action: lawn_mower.dock
+            target:
+              entity_id: !input mower_entity
+
+  - condition: template
+    value_template: "{{ safe_to_mow | bool }}"
+
+  - action: number.set_value
+    target:
+      entity_id: !input manual_duration_number
+    data:
+      value: "{{ calculated_session_hours }}"
+
+  - action: lawn_mower.start_mowing
+    target:
+      entity_id: !input mower_entity
+
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: !input last_mow_helper
+    data:
+      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"

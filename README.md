@@ -100,6 +100,50 @@ Notes:
   Home Assistant is using it. Only one client can maintain the mower connection
   reliably.
 
+## Smart Dry-Weather Mowing Blueprint
+
+This repository includes a generic Home Assistant automation blueprint:
+
+```text
+blueprints/automation/gardena_smart_mowing.yaml
+```
+
+The blueprint calculates mowing need from lawn surface and mower capacity, then
+starts the mower only when the weather forecast and optional wetness blockers say
+the grass should be dry enough. It updates the integration's `Manual Mowing
+Duration` number before starting the mower, so the same blueprint can adjust
+session length through the season.
+
+It acts as a dynamic Home Assistant schedule instead of writing fixed onboard
+mower schedule entries, which lets it react to changing rain forecasts.
+
+Inputs include:
+
+- weather entity with hourly forecast
+- lawn mower entity
+- manual mowing duration number entity
+- lawn area in square meters
+- mower capacity in square meters per hour
+- weekly coverage multiplier
+- minimum and maximum sessions per week
+- minimum and maximum session length
+- allowed mowing time window
+- rain forecast thresholds
+- drying delay after rain
+- optional binary sensors/helpers that block mowing, such as Smart Irrigation,
+  rain, soil moisture, or leaf wetness sensors
+
+Create two helpers before using the blueprint:
+
+- `input_datetime` for last rain/wetness detection
+- `input_datetime` for last mower start
+
+Import URL:
+
+```text
+https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/automation/gardena_smart_mowing.yaml
+```
+
 ## Supported Controls
 
 | Entity | Type | What it does |
