@@ -37,6 +37,20 @@ blueprint:
       selector:
         entity:
           domain: input_datetime
+    current_mow_start_helper:
+      name: Current mowing start helper
+      description: Input datetime helper used to remember when the current mowing run started.
+      selector:
+        entity:
+          domain: input_datetime
+    weekly_run_log_helper:
+      name: Weekly run log helper
+      description: >-
+        Input text helper used to store this week's run report. Create it with a
+        high maximum length if you expect many runs.
+      selector:
+        entity:
+          domain: input_text
     wetness_blockers:
       name: Optional wetness blockers
       description: Optional binary sensors or helpers. If any is on, mowing is blocked.
@@ -227,13 +241,97 @@ blueprint:
       default: true
       selector:
         boolean:
+    persistent_notifications:
+      name: Use persistent notifications
+      default: true
+      selector:
+        boolean:
+    phone_notify_service:
+      name: Optional phone notify service
+      description: >-
+        Optional notify service such as notify.mobile_app_phone_name. Leave blank
+        to only use persistent notifications.
+      default: ""
+      selector:
+        text:
+    command_response_delay_minutes:
+      name: Command response check delay
+      description: Minutes to wait before checking if start or dock commands took effect.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    max_days_without_mowing:
+      name: Alert after this many days without mowing
+      description: Alert if wet weather has blocked mowing for too long.
+      default: 7
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          unit_of_measurement: d
+          mode: box
+    early_stop_threshold_percent:
+      name: Early stop threshold
+      description: Alert if a mowing run ends before this percentage of planned duration.
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 95
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+    weekly_report_day:
+      name: Weekly report day
+      default: Sunday
+      selector:
+        select:
+          options:
+            - Monday
+            - Tuesday
+            - Wednesday
+            - Thursday
+            - Friday
+            - Saturday
+            - Sunday
+    weekly_report_time:
+      name: Weekly report time
+      default: "18:00:00"
+      selector:
+        time:
 
-mode: single
+mode: queued
 max_exceeded: silent
 
 trigger:
   - platform: time_pattern
+    id: schedule_check
     minutes: !input check_minutes_pattern
+  - platform: state
+    id: mowing_started
+    entity_id: !input mower_entity
+    to: mowing
+  - platform: state
+    id: mowing_finished
+    entity_id: !input mower_entity
+    from: mowing
+  - platform: state
+    id: mower_unavailable
+    entity_id: !input mower_entity
+    to:
+      - unavailable
+      - unknown
+    for:
+      minutes: 5
+  - platform: time
+    id: weekly_report
+    at: !input weekly_report_time
 
 variables:
   mower_entity: !input mower_entity
@@ -241,6 +339,8 @@ variables:
   weather_entity: !input weather_entity
   last_rain_helper: !input last_rain_helper
   last_mow_helper: !input last_mow_helper
+  current_mow_start_helper: !input current_mow_start_helper
+  weekly_run_log_helper: !input weekly_run_log_helper
   wetness_blockers: !input wetness_blockers
   lawn_area_m2: !input lawn_area_m2
   mower_capacity_m2_per_hour: !input mower_capacity_m2_per_hour
@@ -260,6 +360,12 @@ variables:
   low_temperature_threshold: !input low_temperature_threshold
   extra_dry_hours_when_cold_or_humid: !input extra_dry_hours_when_cold_or_humid
   park_when_wet: !input park_when_wet
+  persistent_notifications: !input persistent_notifications
+  phone_notify_service: !input phone_notify_service
+  command_response_delay_minutes: !input command_response_delay_minutes
+  max_days_without_mowing: !input max_days_without_mowing
+  early_stop_threshold_percent: !input early_stop_threshold_percent
+  weekly_report_day: !input weekly_report_day
   rain_conditions:
     - rainy
     - pouring
@@ -344,6 +450,121 @@ variables:
     {% endif %}
 
 action:
+  - choose:
+      - conditions: "{{ trigger.id == 'mower_unavailable' }}"
+        sequence:
+          - choose:
+              - conditions: "{{ persistent_notifications | bool }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      title: Smart mowing alert
+                      message: "Mower is unavailable or not responding: {{ mower_entity }}"
+                      notification_id: smart_mowing_mower_unavailable
+          - choose:
+              - conditions: "{{ phone_notify_service | length > 0 }}"
+                sequence:
+                  - action: "{{ phone_notify_service }}"
+                    data:
+                      title: Smart mowing alert
+                      message: "Mower is unavailable or not responding: {{ mower_entity }}"
+          - stop: Mower unavailable alert sent.
+
+      - conditions: "{{ trigger.id == 'mowing_started' }}"
+        sequence:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: !input current_mow_start_helper
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - stop: Mowing start recorded.
+
+      - conditions: "{{ trigger.id == 'mowing_finished' }}"
+        sequence:
+          - variables:
+              started_ts: "{{ as_timestamp(states(current_mow_start_helper), none) }}"
+              ended_ts: "{{ as_timestamp(now()) }}"
+              duration_minutes: >-
+                {% if started_ts is none %}
+                  0
+                {% else %}
+                  {{ ((ended_ts - started_ts) / 60) | round(0) }}
+                {% endif %}
+              planned_minutes: "{{ (states(manual_duration_number) | float(calculated_session_hours | float(0)) * 60) | round(0) }}"
+              too_short: >-
+                {{ duration_minutes | float(0) > 0
+                   and planned_minutes | float(0) > 0
+                   and duration_minutes | float(0) < planned_minutes | float(0) * (early_stop_threshold_percent | float(60) / 100) }}
+              run_line: >-
+                {{ now().strftime('%a %Y-%m-%d') }}:
+                {{ started_ts | timestamp_custom('%H:%M', true) if started_ts is not none else 'unknown' }}
+                - {{ now().strftime('%H:%M') }}
+                ({{ duration_minutes | int(0) }} min)
+              existing_log: "{{ states(weekly_run_log_helper) }}"
+              new_log: >-
+                {% set existing = '' if existing_log in ['unknown', 'unavailable', 'none'] else existing_log %}
+                {{ (existing ~ '\n' ~ run_line).strip() }}
+          - action: input_text.set_value
+            data:
+              entity_id: "{{ weekly_run_log_helper }}"
+              value: "{{ new_log[-1000:] }}"
+          - choose:
+              - conditions: "{{ too_short | bool }}"
+                sequence:
+                  - choose:
+                      - conditions: "{{ persistent_notifications | bool }}"
+                        sequence:
+                          - action: persistent_notification.create
+                            data:
+                              title: Smart mowing alert
+                              message: >-
+                                Mowing ended early. Planned about {{ planned_minutes | int(0) }}
+                                min, but ran {{ duration_minutes | int(0) }} min.
+                              notification_id: smart_mowing_ended_early
+                  - choose:
+                      - conditions: "{{ phone_notify_service | length > 0 }}"
+                        sequence:
+                          - action: "{{ phone_notify_service }}"
+                            data:
+                              title: Smart mowing alert
+                              message: >-
+                                Mowing ended early. Planned about {{ planned_minutes | int(0) }}
+                                min, but ran {{ duration_minutes | int(0) }} min.
+          - stop: Mowing finish recorded.
+
+      - conditions: "{{ trigger.id == 'weekly_report' }}"
+        sequence:
+          - condition: template
+            value_template: "{{ now().strftime('%A') == weekly_report_day }}"
+          - variables:
+              report_text: >-
+                {% set log = states(weekly_run_log_helper) %}
+                {% if log in ['unknown', 'unavailable', 'none', ''] %}
+                  No mowing runs were recorded this week.
+                {% else %}
+                  {{ log }}
+                {% endif %}
+          - choose:
+              - conditions: "{{ persistent_notifications | bool }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      title: Smart mowing weekly report
+                      message: "{{ report_text }}"
+                      notification_id: smart_mowing_weekly_report
+          - choose:
+              - conditions: "{{ phone_notify_service | length > 0 }}"
+                sequence:
+                  - action: "{{ phone_notify_service }}"
+                    data:
+                      title: Smart mowing weekly report
+                      message: "{{ report_text }}"
+          - action: input_text.set_value
+            data:
+              entity_id: "{{ weekly_run_log_helper }}"
+              value: ""
+          - stop: Weekly report sent.
+
   - action: weather.get_forecasts
     target:
       entity_id: !input weather_entity
@@ -389,6 +610,51 @@ action:
           - action: lawn_mower.dock
             target:
               entity_id: !input mower_entity
+          - delay:
+              minutes: !input command_response_delay_minutes
+          - choose:
+              - conditions: "{{ states(mower_entity) == 'mowing' }}"
+                sequence:
+                  - choose:
+                      - conditions: "{{ persistent_notifications | bool }}"
+                        sequence:
+                          - action: persistent_notification.create
+                            data:
+                              title: Smart mowing alert
+                              message: "Dock command was sent because grass/weather is wet, but the mower is still mowing."
+                              notification_id: smart_mowing_dock_failed
+                  - choose:
+                      - conditions: "{{ phone_notify_service | length > 0 }}"
+                        sequence:
+                          - action: "{{ phone_notify_service }}"
+                            data:
+                              title: Smart mowing alert
+                              message: "Dock command was sent because grass/weather is wet, but the mower is still mowing."
+
+  - choose:
+      - conditions: >-
+          {{ current_wet | bool
+             and last_mow_age_hours | float(0) >= (max_days_without_mowing | float(7) * 24) }}
+        sequence:
+          - choose:
+              - conditions: "{{ persistent_notifications | bool }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      title: Smart mowing alert
+                      message: >-
+                        Mowing has been blocked by wet weather/grass for
+                        {{ (last_mow_age_hours | float(0) / 24) | round(1) }} days.
+                      notification_id: smart_mowing_wet_too_long
+          - choose:
+              - conditions: "{{ phone_notify_service | length > 0 }}"
+                sequence:
+                  - action: "{{ phone_notify_service }}"
+                    data:
+                      title: Smart mowing alert
+                      message: >-
+                        Mowing has been blocked by wet weather/grass for
+                        {{ (last_mow_age_hours | float(0) / 24) | round(1) }} days.
 
   - condition: template
     value_template: "{{ safe_to_mow | bool }}"
@@ -402,6 +668,28 @@ action:
   - action: lawn_mower.start_mowing
     target:
       entity_id: !input mower_entity
+
+  - delay:
+      minutes: !input command_response_delay_minutes
+
+  - choose:
+      - conditions: "{{ states(mower_entity) != 'mowing' }}"
+        sequence:
+          - choose:
+              - conditions: "{{ persistent_notifications | bool }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      title: Smart mowing alert
+                      message: "Start mowing command was sent, but the mower did not start mowing."
+                      notification_id: smart_mowing_start_failed
+          - choose:
+              - conditions: "{{ phone_notify_service | length > 0 }}"
+                sequence:
+                  - action: "{{ phone_notify_service }}"
+                    data:
+                      title: Smart mowing alert
+                      message: "Start mowing command was sent, but the mower did not start mowing."
 
   - action: input_datetime.set_datetime
     target:

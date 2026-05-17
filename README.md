@@ -133,10 +133,25 @@ Inputs include:
 - optional binary sensors/helpers that block mowing, such as Smart Irrigation,
   rain, soil moisture, or leaf wetness sensors
 
-Create two helpers before using the blueprint:
+Create these helpers before using the blueprint:
 
 - `input_datetime` for last rain/wetness detection
 - `input_datetime` for last mower start
+- `input_datetime` for the current mowing start
+- `input_text` for the weekly mowing run log
+
+The blueprint can also send persistent notifications and, optionally, a mobile
+app notification service such as `notify.mobile_app_phone_name`.
+
+Monitoring features:
+
+- alert if the mower becomes unavailable
+- alert if a start command does not result in mowing
+- alert if a dock command after wet weather does not stop mowing
+- alert if wet weather blocks mowing for too many days
+- alert if a mowing run ends much earlier than planned
+- send a weekly persistent report with run day, start time, end time, and
+  duration
 
 Import URL:
 
