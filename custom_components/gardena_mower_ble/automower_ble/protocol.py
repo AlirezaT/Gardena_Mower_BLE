@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+GARDENA_WRITE_CHAR = "98bd0002-0b0e-421a-84e5-ddbf75dc6de4"
+GARDENA_READ_CHAR = "98bd0003-0b0e-421a-84e5-ddbf75dc6de4"
+
 
 class ModeOfOperation(IntEnum):
     # ProtocolTypes$IMowerAppMowerMode, used in modeOfOperation: 4586, 1
@@ -433,7 +436,7 @@ class BLEClient:
             await self.client.pair()
             logger.info("paired")
         except BleakError as err:
-            logger.warning(
+            logger.info(
                 "Pairing failed, continuing with protocol handshake: %s", err
             )
             if not self.client.is_connected:
@@ -447,6 +450,20 @@ class BLEClient:
             logger.info("[Service] %s", service)
 
             for char in service.characteristics:
+                if char.uuid == GARDENA_WRITE_CHAR:
+                    self.write_char = char
+
+                if char.uuid == GARDENA_READ_CHAR:
+                    self.read_char = char
+
+                if char.uuid in (GARDENA_WRITE_CHAR, GARDENA_READ_CHAR):
+                    logger.debug(
+                        "  [Characteristic] %s (%s)",
+                        char,
+                        ",".join(char.properties),
+                    )
+                    continue
+
                 if "read" in char.properties:
                     try:
                         value = await self.client.read_gatt_char(char.uuid)
@@ -473,11 +490,6 @@ class BLEClient:
                     logger.debug(
                         "  [Characteristic] %s (%s)", char, ",".join(char.properties)
                     )
-                if char.uuid == "98bd0002-0b0e-421a-84e5-ddbf75dc6de4":
-                    self.write_char = char
-
-                if char.uuid == "98bd0003-0b0e-421a-84e5-ddbf75dc6de4":
-                    self.read_char = char
 
         async def notification_handler(
             characteristic: BleakGATTCharacteristic, data: bytearray
