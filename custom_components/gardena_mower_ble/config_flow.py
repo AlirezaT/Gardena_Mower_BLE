@@ -71,9 +71,11 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if manufacturer_data.product_type != ProductType.MOWER:
             LOGGER.debug(
-                "Unsupported device: %s (%s)", manufacturer_data, discovery_info
+                "Device has the Gardena service but incomplete mower advertisement: "
+                "%s (%s)",
+                manufacturer_data,
+                discovery_info,
             )
-            return False
 
         self.pairable = manufacturer_data.pairable
 
@@ -219,7 +221,8 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
             (channel_id, mower) = await self.connect_mower(device)
 
             response_result = await mower.connect(device)
-            await mower.disconnect()
+            if mower.is_connected():
+                await mower.disconnect()
 
             if response_result is not ResponseResult.OK:
                 LOGGER.debug("cannot connect, response: %s", response_result)
@@ -257,6 +260,8 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors=errors,
                 )
         except (TimeoutError, BleakError):
+            if "mower" in locals() and mower.is_connected():
+                await mower.disconnect()
             return self.async_abort(reason="cannot_connect")
 
         return self.async_create_entry(

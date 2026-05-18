@@ -295,6 +295,9 @@ class BLEClient:
 
         self.client: BleakClient | None = None
         self.protocol = None
+        self.write_char: BleakGATTCharacteristic | None = None
+        self.read_char: BleakGATTCharacteristic | None = None
+        self._notify_started = False
 
     async def get_protocol(self):
         if self.protocol is None:
@@ -497,7 +500,20 @@ class BLEClient:
             logger.info("Received: %s", str(binascii.hexlify(data)))
             await self.queue.put(data)
 
-        await self.client.start_notify(self.read_char, notification_handler)
+        if self.write_char is None or self.read_char is None:
+            logger.error("Gardena protocol characteristics not found")
+            if self.is_connected():
+                await self.disconnect()
+            return ResponseResult.UNKNOWN_ERROR
+
+        try:
+            await self.client.start_notify(self.read_char, notification_handler)
+            self._notify_started = True
+        except BleakError as err:
+            logger.warning("Unable to subscribe to mower notifications: %s", err)
+            if self.is_connected():
+                await self.disconnect()
+            return ResponseResult.NOT_ALLOWED
 
         await asyncio.sleep(5.0)
 
@@ -593,7 +609,16 @@ class BLEClient:
         `connect()` before the Python script exits
         """
 
-        await self.client.stop_notify(self.read_char)
+        if self.client is None:
+            return
+
+        if self._notify_started and self.read_char is not None:
+            try:
+                await self.client.stop_notify(self.read_char)
+            except BleakError as err:
+                logger.debug("Unable to stop notifications: %s", err)
+            finally:
+                self._notify_started = False
         await self.queue.put(None)
 
         logger.info("disconnecting...")
