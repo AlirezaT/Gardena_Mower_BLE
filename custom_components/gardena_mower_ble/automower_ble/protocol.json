@@ -228,7 +228,7 @@
             "useOnFriday": "bool",
             "useOnSaturday": "bool",
             "useOnSunday": "bool",
-            "unknown": "uint32"
+            "unknown": "remaining_uint"
         },
         "description": "Get a specified task"
     },
