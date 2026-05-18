@@ -5,6 +5,7 @@ import asyncio
 import logging
 import json
 from importlib.resources import files
+from bleak import BleakError
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak_retry_connector import establish_connection, BleakClientWithServiceCache
 from typing import TYPE_CHECKING
@@ -428,8 +429,15 @@ class BLEClient:
         logger.info("connected")
 
         logger.info("pairing device...")
-        await self.client.pair()
-        logger.info("paired")
+        try:
+            await self.client.pair()
+            logger.info("paired")
+        except BleakError as err:
+            logger.warning(
+                "Pairing failed, continuing with protocol handshake: %s", err
+            )
+            if not self.client.is_connected:
+                return ResponseResult.UNKNOWN_ERROR
 
         # This is not safe, _mtu_size is not defined in BaseBleakClient but may
         # be defined in subclasses.
