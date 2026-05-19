@@ -1,5 +1,6 @@
 """Provides the DataUpdateCoordinator."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -94,6 +95,13 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         LOGGER.debug("Shutdown")
         await super().async_shutdown()
         if self.mower.is_connected():
+            if self.mower.lock.locked():
+                try:
+                    async with asyncio.timeout(10):
+                        async with self.mower.lock:
+                            pass
+                except TimeoutError:
+                    LOGGER.debug("Timed out waiting for active mower command during shutdown")
             await self.mower.disconnect()
         if self._delayed_refresh_cancel is not None:
             self._delayed_refresh_cancel()
@@ -291,6 +299,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data["ChargingStationLoopSignalGeneration"] = bool(
                             loop_signal_generation
                         )
+                        data["EcoMode"] = not data["ChargingStationLoopSignalGeneration"]
                         LOGGER.debug(
                             "ChargingStationLoopSignalGeneration: %s",
                             data["ChargingStationLoopSignalGeneration"],

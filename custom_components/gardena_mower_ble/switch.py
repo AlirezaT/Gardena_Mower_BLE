@@ -16,7 +16,7 @@ from .automower_ble.protocol import ResponseResult
 from .entity import GardenaMowerBleDescriptorEntity
 
 ALWAYS_CREATE_SWITCHES = {
-    "ChargingStationLoopSignalGeneration",
+    "EcoMode",
 }
 
 
@@ -26,6 +26,7 @@ class GardenaMowerBleSwitchEntityDescription(SwitchEntityDescription):
 
     set_command: str
     value_parameter: str
+    invert_value: bool = False
     starting_point_id: int | None = None
 
 
@@ -44,12 +45,13 @@ DESCRIPTIONS = (
         value_parameter="enabled",
     ),
     GardenaMowerBleSwitchEntityDescription(
-        key="ChargingStationLoopSignalGeneration",
-        name="Charging Station Loop Signal Generation",
-        icon="mdi:signal-variant",
+        key="EcoMode",
+        name="Eco Mode",
+        icon="mdi:leaf",
         entity_category=EntityCategory.CONFIG,
         set_command="SetChargingStationLoopSignalGeneration",
         value_parameter="enabled",
+        invert_value=True,
     ),
     *(
         GardenaMowerBleSwitchEntityDescription(
@@ -122,6 +124,8 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
     async def _async_set_enabled(self, enabled: bool) -> None:
         """Enable or disable the starting point."""
         description = self.entity_description
+        if description.invert_value:
+            enabled = not enabled
         request = {description.value_parameter: enabled}
         if description.starting_point_id is not None:
             request["startingPointId"] = description.starting_point_id

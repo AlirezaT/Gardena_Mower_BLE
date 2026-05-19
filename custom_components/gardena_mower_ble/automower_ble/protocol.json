@@ -670,5 +670,13 @@
             "enabled": "bool"
         },
         "description": "Enable or disable charging station loop signal generation or eco mode."
+    },
+    "GenerateLoopSignal": {
+        "major": 5356,
+        "minor": 3,
+        "requestType": {
+            "signalType": "uint8"
+        },
+        "description": "Generate a new loop signal between mower and charging station."
     }
 }
