@@ -48,6 +48,18 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:snowflake",
     ),
+    BinarySensorEntityDescription(
+        key="garageSupported",
+        name="Garage Supported",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:garage",
+    ),
+    BinarySensorEntityDescription(
+        key="zoneProtectSupported",
+        name="ZoneProtect Supported",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:shield-check",
+    ),
 )
 
 

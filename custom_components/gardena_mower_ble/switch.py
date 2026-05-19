@@ -39,6 +39,14 @@ DESCRIPTIONS = (
         set_command="SetSensorControlEnabled",
         value_parameter="enabled",
     ),
+    GardenaMowerBleSwitchEntityDescription(
+        key="ChargingStationLoopSignalGeneration",
+        name="Charging Station Loop Signal Generation",
+        icon="mdi:signal-variant",
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetChargingStationLoopSignalGeneration",
+        value_parameter="enabled",
+    ),
     *(
         GardenaMowerBleSwitchEntityDescription(
             key=f"StartingPoint{starting_point_id}Enabled",

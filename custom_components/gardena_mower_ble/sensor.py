@@ -198,6 +198,12 @@ DESCRIPTIONS = (
         icon="mdi:chip",
     ),
     SensorEntityDescription(
+        key="softwarePackageVersion",
+        name="Software Package Version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:package-variant",
+    ),
+    SensorEntityDescription(
         key="pitch",
         name="Pitch",
         state_class=SensorStateClass.MEASUREMENT,
@@ -242,6 +248,14 @@ DESCRIPTIONS = (
         icon="mdi:signal",
     ),
     SensorEntityDescription(
+        key="loopSignalStrength",
+        name="Loop Signal Strength",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=PERCENTAGE,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:signal",
+    ),
+    SensorEntityDescription(
         key="a0Signal",
         name="A0 Signal",
         state_class=SensorStateClass.MEASUREMENT,
@@ -278,6 +292,13 @@ DESCRIPTIONS = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:home-message",
+    ),
+    SensorEntityDescription(
+        key="supportedAccessories",
+        name="Supported Accessories",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:puzzle",
     ),
 
     # Statistics

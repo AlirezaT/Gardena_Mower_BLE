@@ -52,11 +52,15 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._reversing_distance_supported = True
         self._starting_points_supported = True
         self._comboard_sensor_data_supported = True
+        self._app_loop_signals_supported = True
+        self._loop_signal_strength_supported = True
         self._signal_quality_supported = True
         self._battery_diagnostics_supported = True
         self._orientation_diagnostics_supported = True
         self._sensor_control_supported = True
         self._frost_sensor_supported = True
+        self._charging_station_loop_signal_supported = True
+        self._supported_accessories_supported = True
         self._unsupported_static_commands: set[str] = set()
         self._static_data: dict[str, Any] = {}
         self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
@@ -243,6 +247,36 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
+            if self._charging_station_loop_signal_supported:
+                try:
+                    result, loop_signal_generation = await self.mower.command_response(
+                        "GetChargingStationLoopSignalGeneration",
+                        warn_on_error=False,
+                    )
+                    if (
+                        result is ResponseResult.OK
+                        and loop_signal_generation is not None
+                    ):
+                        data["ChargingStationLoopSignalGeneration"] = bool(
+                            loop_signal_generation
+                        )
+                        LOGGER.debug(
+                            "ChargingStationLoopSignalGeneration: %s",
+                            data["ChargingStationLoopSignalGeneration"],
+                        )
+                    else:
+                        self._charging_station_loop_signal_supported = False
+                        LOGGER.debug(
+                            "GetChargingStationLoopSignalGeneration returned %s - disabling charging station loop signal polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._charging_station_loop_signal_supported = False
+                    LOGGER.debug(
+                        "GetChargingStationLoopSignalGeneration failed - disabling charging station loop signal polling",
+                        exc_info=True,
+                    )
+
             if self._reversing_distance_supported:
                 try:
                     result, reversing_distance = await self.mower.command_response(
@@ -357,7 +391,53 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._signal_quality_supported:
+            if self._loop_signal_strength_supported:
+                try:
+                    result, loop_signal_strength = await self.mower.command_response(
+                        "GetLoopSignalStrength",
+                        warn_on_error=False,
+                        signalType=0,
+                    )
+                    if result is ResponseResult.OK and loop_signal_strength is not None:
+                        data["loopSignalStrength"] = loop_signal_strength
+                        LOGGER.debug("LoopSignalStrength: %s", loop_signal_strength)
+                    else:
+                        self._loop_signal_strength_supported = False
+                        LOGGER.debug(
+                            "GetLoopSignalStrength returned %s - disabling app loop signal strength polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._loop_signal_strength_supported = False
+                    LOGGER.debug(
+                        "GetLoopSignalStrength failed - disabling app loop signal strength polling",
+                        exc_info=True,
+                    )
+
+            if self._app_loop_signals_supported:
+                try:
+                    result, loop_signals = await self.mower.command_response(
+                        "GetLoopSignals",
+                        warn_on_error=False,
+                        signalType=0,
+                    )
+                    if result is ResponseResult.OK and loop_signals is not None:
+                        data.update(loop_signals)
+                        LOGGER.debug("LoopSignals: %s", loop_signals)
+                    else:
+                        self._app_loop_signals_supported = False
+                        LOGGER.debug(
+                            "GetLoopSignals returned %s - disabling app loop signal polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._app_loop_signals_supported = False
+                    LOGGER.debug(
+                        "GetLoopSignals failed - disabling app loop signal polling",
+                        exc_info=True,
+                    )
+
+            if self._signal_quality_supported and "a0Signal" not in data:
                 try:
                     result, signal_quality = await self.mower.command_response(
                         "GetSignalQuality", warn_on_error=False
@@ -437,6 +517,32 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (ValueError, IndexError) as err:
                 LOGGER.debug("Unable to read last mower message: %s", err)
 
+            if self._supported_accessories_supported:
+                try:
+                    result, supported_accessories = await self.mower.command_response(
+                        "GetSupportedAccessories", warn_on_error=False
+                    )
+                    if result is ResponseResult.OK and supported_accessories is not None:
+                        data["supportedAccessories"] = supported_accessories
+                        data["garageSupported"] = bool(supported_accessories & 1)
+                        data["zoneProtectSupported"] = bool(supported_accessories & 2)
+                        LOGGER.debug(
+                            "SupportedAccessories: %s",
+                            supported_accessories,
+                        )
+                    else:
+                        self._supported_accessories_supported = False
+                        LOGGER.debug(
+                            "GetSupportedAccessories returned %s - disabling supported accessory polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._supported_accessories_supported = False
+                    LOGGER.debug(
+                        "GetSupportedAccessories failed - disabling supported accessory polling",
+                        exc_info=True,
+                    )
+
             self._last_successful_update = datetime.now()
             self._last_data = data
 
@@ -453,45 +559,56 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_static_info(self, data: dict[str, Any]) -> None:
         """Fetch mostly-static mower information and copy it into coordinator data."""
         static_commands = {
-            "mowerName": "GetUserMowerNameAsAsciiString",
+            "mowerName": (
+                "GetUserMowerName",
+                "GetUserMowerNameAsAsciiString",
+            ),
             "serialNumber": "GetSerialNumber",
             "hardwareSerialNumber": "GetHwSerialNumber",
             "hardwareRevision": "GetHardwareRevision",
             "productionTime": "GetProductionTime",
             "nodeIprId": "GetNodeIprId",
             "husqvarnaId": "GetHusqvarnaId",
+            "softwarePackageVersion": "GetSoftwarePackageVersion",
             "bootSoftwareVersion": "GetSwVersionStringBoot",
             "applicationSoftwareVersion": "GetSwVersionStringAppl",
             "subSoftwareVersion": "GetSwVersionStringSub",
         }
 
-        for key, command_name in static_commands.items():
-            if (
-                key in self._static_data
-                or command_name in self._unsupported_static_commands
-            ):
-                continue
-            try:
-                result, value = await self.mower.command_response(
-                    command_name, warn_on_error=False
-                )
-            except (KeyError, ValueError, IndexError):
-                self._unsupported_static_commands.add(command_name)
-                LOGGER.debug("%s failed - disabling static info polling", command_name)
+        for key, command_names in static_commands.items():
+            if key in self._static_data:
                 continue
 
-            if result is not ResponseResult.OK or value is None:
-                self._unsupported_static_commands.add(command_name)
-                LOGGER.debug(
-                    "%s returned %s - disabling static info polling",
-                    command_name,
-                    result.name,
-                )
-                continue
+            if isinstance(command_names, str):
+                command_names = (command_names,)
 
-            if key == "productionTime":
-                value = datetime.fromtimestamp(value, timezone.utc)
-            self._static_data[key] = value
+            for command_name in command_names:
+                if command_name in self._unsupported_static_commands:
+                    continue
+                try:
+                    result, value = await self.mower.command_response(
+                        command_name, warn_on_error=False
+                    )
+                except (KeyError, ValueError, IndexError):
+                    self._unsupported_static_commands.add(command_name)
+                    LOGGER.debug(
+                        "%s failed - disabling static info polling", command_name
+                    )
+                    continue
+
+                if result is not ResponseResult.OK or value is None:
+                    self._unsupported_static_commands.add(command_name)
+                    LOGGER.debug(
+                        "%s returned %s - disabling static info polling",
+                        command_name,
+                        result.name,
+                    )
+                    continue
+
+                if key == "productionTime":
+                    value = datetime.fromtimestamp(value, timezone.utc)
+                self._static_data[key] = value
+                break
 
         data.update(self._static_data)
 

@@ -230,6 +230,16 @@ class Command:
                     "\x00"
                 )  # Remove trailing null bytes
                 dpos += len(data)
+            elif dtype == "utf16":
+                if len(self.response_data_type) != 1:
+                    raise ValueError(
+                        "UTF-16 response type can currently only be used when there is only one response type"
+                    )
+                try:
+                    response[name] = data.decode("utf-16-le").rstrip("\x00")
+                except UnicodeDecodeError as err:
+                    raise ValueError("Unable to decode UTF-16 response") from err
+                dpos += len(data)
             else:
                 raise ValueError("Unknown data type: " + dtype)
         if dpos != len(data):
