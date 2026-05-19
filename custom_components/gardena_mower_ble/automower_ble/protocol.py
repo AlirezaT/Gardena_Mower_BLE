@@ -421,6 +421,11 @@ class BLEClient:
             if self.is_connected():
                 await self.disconnect()
             return None
+        except BleakError as err:
+            logger.warning("BLE communication failed: %s", err)
+            if self.is_connected():
+                await self.disconnect()
+            raise
 
         return response_data
 

@@ -19,7 +19,11 @@ from .const import DOMAIN, LOGGER
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
 
-SCAN_INTERVAL = timedelta(seconds=8)
+SCAN_INTERVAL = timedelta(seconds=20)
+REALTIME_POLL_INTERVAL = timedelta(minutes=1)
+SETTINGS_POLL_INTERVAL = timedelta(minutes=2)
+DIAGNOSTIC_POLL_INTERVAL = timedelta(minutes=5)
+RECENT_DATA_TIMEOUT = timedelta(minutes=5)
 ACTION_REFRESH_DELAY = 4
 DEFAULT_MANUAL_MOWING_DURATION_HOURS = 3.0
 
@@ -63,8 +67,27 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._supported_accessories_supported = True
         self._unsupported_static_commands: set[str] = set()
         self._static_data: dict[str, Any] = {}
+        self._last_data: dict[str, Any] = {}
+        self._last_successful_update: datetime | None = None
+        self._last_realtime_poll: datetime | None = None
+        self._last_settings_poll: datetime | None = None
+        self._last_diagnostic_poll: datetime | None = None
         self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
         self._delayed_refresh_cancel = None
+
+    def has_recent_data(self) -> bool:
+        """Return true when the coordinator has recent cached mower data."""
+        if self._last_successful_update is None:
+            return False
+        return datetime.now() - self._last_successful_update <= RECENT_DATA_TIMEOUT
+
+    def _poll_due(self, timestamp_attr: str, interval: timedelta, now: datetime) -> bool:
+        """Return true when a slower polling group should be refreshed."""
+        last_poll = getattr(self, timestamp_attr)
+        if last_poll is None or now - last_poll >= interval:
+            setattr(self, timestamp_attr, now)
+            return True
+        return False
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and any connection."""
@@ -110,9 +133,19 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         LOGGER.debug("Polling device")
         
 
-        data: dict[str, Any] = {}
+        data: dict[str, Any] = dict(self._last_data)
         data["ManualMowingDuration"] = self.manual_mowing_duration_hours
         data["modelName"] = self.model
+        now = datetime.now()
+        poll_realtime = self._poll_due(
+            "_last_realtime_poll", REALTIME_POLL_INTERVAL, now
+        )
+        poll_settings = self._poll_due(
+            "_last_settings_poll", SETTINGS_POLL_INTERVAL, now
+        )
+        poll_diagnostics = self._poll_due(
+            "_last_diagnostic_poll", DIAGNOSTIC_POLL_INTERVAL, now
+        )
 
         try:
             if not self.mower.is_connected():
@@ -124,19 +157,16 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["battery_level"] = await self.mower.battery_level()
             LOGGER.debug("battery_level" + str(data["battery_level"]))
             if data["battery_level"] is None:
-                await self._async_find_device()
                 raise UpdateFailed("Error getting data from device")
 
             data["activity"] = await self.mower.mower_activity()
             LOGGER.debug("activity:" + str(data["activity"]))
             if data["activity"] is None:
-                await self._async_find_device()
                 raise UpdateFailed("Error getting data from device")
 
             data["state"] = await self.mower.mower_state()
             LOGGER.debug("state:" + str(data["state"]))
             if data["state"] is None:
-                await self._async_find_device()
                 raise UpdateFailed("Error getting data from device")
             
             data["next_start_time"] = await self.mower.mower_next_start_time()
@@ -156,7 +186,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             await self._async_update_static_info(data)
 
-            if self._battery_diagnostics_supported:
+            if poll_realtime and self._battery_diagnostics_supported:
                 try:
                     battery_diagnostics = {
                         "batteryVoltage": "GetBatteryVoltage",
@@ -189,13 +219,14 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            try:
-                data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
-                LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
-            except KeyError:
-                LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
+            if poll_settings:
+                try:
+                    data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
+                    LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
+                except KeyError:
+                    LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
 
-            if self._sensor_control_supported:
+            if poll_settings and self._sensor_control_supported:
                 try:
                     sensor_control_commands = {
                         "SensorControlEnabled": "GetSensorControlEnabled",
@@ -226,7 +257,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._frost_sensor_supported:
+            if poll_settings and self._frost_sensor_supported:
                 try:
                     result, frost_sensor_enabled = await self.mower.command_response(
                         "GetFrostSensorEnabled", warn_on_error=False
@@ -247,7 +278,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._charging_station_loop_signal_supported:
+            if poll_settings and self._charging_station_loop_signal_supported:
                 try:
                     result, loop_signal_generation = await self.mower.command_response(
                         "GetChargingStationLoopSignalGeneration",
@@ -277,7 +308,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._reversing_distance_supported:
+            if poll_settings and self._reversing_distance_supported:
                 try:
                     result, reversing_distance = await self.mower.command_response(
                         "GetReversingDistance",
@@ -299,7 +330,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._starting_points_supported:
+            if poll_settings and self._starting_points_supported:
                 try:
                     starting_point_proportions = []
                     for starting_point_id in range(1, 4):
@@ -370,7 +401,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._comboard_sensor_data_supported:
+            if poll_realtime and self._comboard_sensor_data_supported:
                 try:
                     result, sensor_data = await self.mower.command_response(
                         "GetComboardSensorData", warn_on_error=False
@@ -391,7 +422,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._loop_signal_strength_supported:
+            if poll_realtime and self._loop_signal_strength_supported:
                 try:
                     result, loop_signal_strength = await self.mower.command_response(
                         "GetLoopSignalStrength",
@@ -414,7 +445,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._app_loop_signals_supported:
+            if poll_realtime and self._app_loop_signals_supported:
                 try:
                     result, loop_signals = await self.mower.command_response(
                         "GetLoopSignals",
@@ -437,7 +468,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._signal_quality_supported and "a0Signal" not in data:
+            if poll_realtime and self._signal_quality_supported and "a0Signal" not in data:
                 try:
                     result, signal_quality = await self.mower.command_response(
                         "GetSignalQuality", warn_on_error=False
@@ -458,7 +489,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._orientation_diagnostics_supported:
+            if poll_realtime and self._orientation_diagnostics_supported:
                 try:
                     orientation_diagnostics = {
                         "orientationPitch": "GetOrientationPitch",
@@ -489,35 +520,37 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            # workaround for issue21
-            try:
-                data["statistics"] = await self.mower.command("GetAllStatistics")
-                LOGGER.debug("statuses: " + str(data["statistics"]))
+            if poll_diagnostics:
+                # workaround for issue21
+                try:
+                    data["statistics"] = await self.mower.command("GetAllStatistics")
+                    LOGGER.debug("statuses: " + str(data["statistics"]))
 
-                # Flatten statistics into top-level coordinator data
-                if data["statistics"]:
-                    for key, value in data["statistics"].items():
-                        data[key] = value
+                    # Flatten statistics into top-level coordinator data
+                    if data["statistics"]:
+                        for key, value in data["statistics"].items():
+                            data[key] = value
 
-            except ValueError as e:
-                if "Data length mismatch" in str(e):
-                    LOGGER.debug("Known fail on GetAllStatistics - skipping")
-                    data["statistics"] = None
-                else:
-                    raise
+                except ValueError as e:
+                    if "Data length mismatch" in str(e):
+                        LOGGER.debug("Known fail on GetAllStatistics - skipping")
+                        data["statistics"] = None
+                    else:
+                        raise
 
             data["operatorstate"] = await self.mower.command("IsOperatorLoggedIn")
             LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
 
-            try:
-                data["last_message"] = await self.mower.command(
-                    "GetMessage", messageId=0
-                )
-                LOGGER.debug("last_message: " + str(data["last_message"]))
-            except (ValueError, IndexError) as err:
-                LOGGER.debug("Unable to read last mower message: %s", err)
+            if poll_diagnostics:
+                try:
+                    data["last_message"] = await self.mower.command(
+                        "GetMessage", messageId=0
+                    )
+                    LOGGER.debug("last_message: " + str(data["last_message"]))
+                except (ValueError, IndexError) as err:
+                    LOGGER.debug("Unable to read last mower message: %s", err)
 
-            if self._supported_accessories_supported:
+            if poll_diagnostics and self._supported_accessories_supported:
                 try:
                     result, supported_accessories = await self.mower.command_response(
                         "GetSupportedAccessories", warn_on_error=False
@@ -549,7 +582,6 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         except BleakError as err:
             LOGGER.error("Error getting data from device")
-            await self._async_find_device()
             raise UpdateFailed("Error getting data from device") from err
         
         LOGGER.debug("MOWER DATA: %s", data)

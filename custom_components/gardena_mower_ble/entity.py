@@ -32,7 +32,7 @@ class GardenaMowerBleEntity(CoordinatorEntity[GardenaCoordinator]):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return super().available and self.coordinator.mower.is_connected()
+        return self.coordinator.has_recent_data()
 
 
 class GardenaMowerBleDescriptorEntity(GardenaMowerBleEntity):

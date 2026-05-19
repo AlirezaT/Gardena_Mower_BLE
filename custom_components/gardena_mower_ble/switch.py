@@ -15,6 +15,10 @@ from . import GardenaConfigEntry
 from .automower_ble.protocol import ResponseResult
 from .entity import GardenaMowerBleDescriptorEntity
 
+ALWAYS_CREATE_SWITCHES = {
+    "ChargingStationLoopSignalGeneration",
+}
+
 
 @dataclass(frozen=True, kw_only=True)
 class GardenaMowerBleSwitchEntityDescription(SwitchEntityDescription):
@@ -90,6 +94,7 @@ async def async_setup_entry(
         )
         for description in DESCRIPTIONS
         if description.key in coordinator.data
+        or description.key in ALWAYS_CREATE_SWITCHES
     )
 
 
