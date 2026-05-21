@@ -138,6 +138,8 @@ Inputs include:
 - drying delay after rain
 - optional binary sensors/helpers that block mowing, such as Smart Irrigation,
   rain, soil moisture, or leaf wetness sensors
+- optional total cutting time sensor, used to measure real cutting duration
+  across sessions split by battery charging
 
 Create these helpers before using the blueprint:
 
@@ -145,6 +147,13 @@ Create these helpers before using the blueprint:
 - `input_datetime` for last mower start
 - `input_datetime` for the current mowing start
 - `input_text` for the weekly mowing run log
+
+Optional helpers:
+
+- `input_number` for the cutting-time value at the start of the current smart
+  mowing run
+- `input_datetime` for the next expected smart mowing start
+- `input_text` for the estimated smart mowing schedule for the coming week
 
 The blueprint can also send persistent notifications and, optionally, a mobile
 app notification service such as `notify.mobile_app_phone_name`.
@@ -156,6 +165,8 @@ Monitoring features:
 - alert if a dock command after wet weather does not stop mowing
 - alert if wet weather blocks mowing for too many days
 - alert if a mowing run ends much earlier than planned
+- store the next expected mowing start and an estimated weekly plan in optional
+  helpers
 - send a weekly persistent report with run day, start time, end time, and
   duration
 

@@ -43,6 +43,45 @@ blueprint:
       selector:
         entity:
           domain: input_datetime
+    total_cutting_time_sensor:
+      name: Optional total cutting time sensor
+      description: >-
+        Optional lifetime cutting/blade-time sensor. When provided, run duration
+        and early-stop checks use the cutting-time delta instead of wall-clock
+        time, which handles mower sessions split by battery charging.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    current_mow_cutting_start_helper:
+      name: Optional cutting time start helper
+      description: >-
+        Optional input_number helper used to remember the total cutting-time
+        value at the start of the current smart mowing run. Use this together
+        with the total cutting time sensor.
+      default: ""
+      selector:
+        entity:
+          domain: input_number
+    next_expected_start_helper:
+      name: Optional next expected start helper
+      description: >-
+        Optional input_datetime helper where the blueprint stores the next
+        expected smart mowing start based on rain, drying time, time window, and
+        mowing gap.
+      default: ""
+      selector:
+        entity:
+          domain: input_datetime
+    weekly_schedule_helper:
+      name: Optional weekly schedule helper
+      description: >-
+        Optional input_text helper where the blueprint stores an estimated
+        smart mowing plan for the coming week.
+      default: ""
+      selector:
+        entity:
+          domain: input_text
     weekly_run_log_helper:
       name: Weekly run log helper
       description: >-
@@ -340,6 +379,10 @@ variables:
   last_rain_helper: !input last_rain_helper
   last_mow_helper: !input last_mow_helper
   current_mow_start_helper: !input current_mow_start_helper
+  total_cutting_time_sensor: !input total_cutting_time_sensor
+  current_mow_cutting_start_helper: !input current_mow_cutting_start_helper
+  next_expected_start_helper: !input next_expected_start_helper
+  weekly_schedule_helper: !input weekly_schedule_helper
   weekly_run_log_helper: !input weekly_run_log_helper
   wetness_blockers: !input wetness_blockers
   lawn_area_m2: !input lawn_area_m2
@@ -448,6 +491,26 @@ variables:
     {% else %}
       {{ now() >= start or now() <= end }}
     {% endif %}
+  use_cutting_time_sensor: >-
+    {{ total_cutting_time_sensor | length > 0
+       and current_mow_cutting_start_helper | length > 0
+       and states(total_cutting_time_sensor) not in ['unknown', 'unavailable', 'none', '']
+       and states(current_mow_cutting_start_helper) not in ['unknown', 'unavailable', 'none', ''] }}
+  current_cutting_minutes: >-
+    {% set value = states(total_cutting_time_sensor) | float(0) %}
+    {% set unit = state_attr(total_cutting_time_sensor, 'unit_of_measurement') | default('', true) %}
+    {% if unit in ['s', 'sec', 'second', 'seconds'] %}
+      {{ value / 60 }}
+    {% elif unit in ['h', 'hr', 'hour', 'hours'] %}
+      {{ value * 60 }}
+    {% elif unit in ['d', 'day', 'days'] %}
+      {{ value * 1440 }}
+    {% else %}
+      {{ value }}
+    {% endif %}
+  stored_cutting_start_minutes: "{{ states(current_mow_cutting_start_helper) | float(0) }}"
+  active_cutting_minutes: >-
+    {{ [current_cutting_minutes | float(0) - stored_cutting_start_minutes | float(0), 0] | max }}
 
 action:
   - choose:
@@ -472,11 +535,27 @@ action:
 
       - conditions: "{{ trigger.id == 'mowing_started' }}"
         sequence:
-          - action: input_datetime.set_datetime
-            target:
-              entity_id: !input current_mow_start_helper
-            data:
-              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - variables:
+              planned_minutes: "{{ (states(manual_duration_number) | float(calculated_session_hours | float(0)) * 60) | round(0) }}"
+              cutting_start_should_reset: >-
+                {{ not use_cutting_time_sensor | bool
+                   or stored_cutting_start_minutes | float(0) <= 0
+                   or active_cutting_minutes | float(0) >= planned_minutes | float(0) * (early_stop_threshold_percent | float(60) / 100) }}
+          - choose:
+              - conditions: "{{ cutting_start_should_reset | bool }}"
+                sequence:
+                  - action: input_datetime.set_datetime
+                    target:
+                      entity_id: !input current_mow_start_helper
+                    data:
+                      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+                  - choose:
+                      - conditions: "{{ use_cutting_time_sensor | bool }}"
+                        sequence:
+                          - action: input_number.set_value
+                            data:
+                              entity_id: "{{ current_mow_cutting_start_helper }}"
+                              value: "{{ current_cutting_minutes | float(0) }}"
           - stop: Mowing start recorded.
 
       - conditions: "{{ trigger.id == 'mowing_finished' }}"
@@ -484,30 +563,59 @@ action:
           - variables:
               started_ts: "{{ as_timestamp(states(current_mow_start_helper), none) }}"
               ended_ts: "{{ as_timestamp(now()) }}"
-              duration_minutes: >-
+              wall_duration_minutes: >-
                 {% if started_ts is none %}
                   0
                 {% else %}
                   {{ ((ended_ts - started_ts) / 60) | round(0) }}
                 {% endif %}
               planned_minutes: "{{ (states(manual_duration_number) | float(calculated_session_hours | float(0)) * 60) | round(0) }}"
+              cutting_duration_minutes: "{{ active_cutting_minutes | float(0) | round(0) }}"
+              duration_minutes: >-
+                {% if use_cutting_time_sensor | bool %}
+                  {{ cutting_duration_minutes }}
+                {% else %}
+                  {{ wall_duration_minutes }}
+                {% endif %}
+              likely_recharge_pause: >-
+                {{ use_cutting_time_sensor | bool
+                   and duration_minutes | float(0) > 0
+                   and planned_minutes | float(0) > 0
+                   and duration_minutes | float(0) < planned_minutes | float(0) * (early_stop_threshold_percent | float(60) / 100) }}
               too_short: >-
-                {{ duration_minutes | float(0) > 0
+                {{ not use_cutting_time_sensor | bool
+                   and duration_minutes | float(0) > 0
                    and planned_minutes | float(0) > 0
                    and duration_minutes | float(0) < planned_minutes | float(0) * (early_stop_threshold_percent | float(60) / 100) }}
               run_line: >-
                 {{ now().strftime('%a %Y-%m-%d') }}:
                 {{ started_ts | timestamp_custom('%H:%M', true) if started_ts is not none else 'unknown' }}
                 - {{ now().strftime('%H:%M') }}
-                ({{ duration_minutes | int(0) }} min)
+                ({{ duration_minutes | int(0) }} min{% if use_cutting_time_sensor | bool %} cutting{% endif %})
               existing_log: "{{ states(weekly_run_log_helper) }}"
               new_log: >-
                 {% set existing = '' if existing_log in ['unknown', 'unavailable', 'none'] else existing_log %}
                 {{ (existing ~ '\n' ~ run_line).strip() }}
+          - choose:
+              - conditions: "{{ likely_recharge_pause | bool }}"
+                sequence:
+                  - stop: Mower paused or docked before enough cutting time was reached; treating this as a recharge/interruption, not a completed run.
           - action: input_text.set_value
             data:
               entity_id: "{{ weekly_run_log_helper }}"
               value: "{{ new_log[-1000:] }}"
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: !input last_mow_helper
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - choose:
+              - conditions: "{{ use_cutting_time_sensor | bool }}"
+                sequence:
+                  - action: input_number.set_value
+                    data:
+                      entity_id: "{{ current_mow_cutting_start_helper }}"
+                      value: 0
           - choose:
               - conditions: "{{ too_short | bool }}"
                 sequence:
@@ -594,6 +702,59 @@ action:
            and last_rain_age_hours | float(9999) >= dynamic_dry_hours | float(4)
            and last_mow_age_hours | float(9999) >= calculated_gap_hours | float(24)
            and mower_state not in ['mowing', 'returning', 'error', 'unavailable', 'unknown'] }}
+      next_expected_start: >-
+        {% set now_ts = as_timestamp(now()) %}
+        {% set allowed_start_ts = as_timestamp(today_at(allowed_start_time)) %}
+        {% set allowed_end_ts = as_timestamp(today_at(allowed_end_time)) %}
+        {% if allowed_start_ts <= allowed_end_ts %}
+          {% if now_ts <= allowed_start_ts %}
+            {% set window_ts = allowed_start_ts %}
+          {% elif now_ts <= allowed_end_ts %}
+            {% set window_ts = now_ts %}
+          {% else %}
+            {% set window_ts = allowed_start_ts + 86400 %}
+          {% endif %}
+        {% else %}
+          {% set window_ts = now_ts if now_ts >= allowed_start_ts or now_ts <= allowed_end_ts else allowed_start_ts %}
+        {% endif %}
+        {% set rain_ts = as_timestamp(states(last_rain_helper), none) %}
+        {% set dry_ts = 0 if rain_ts is none else rain_ts + (dynamic_dry_hours | float(4) * 3600) %}
+        {% set mow_ts = as_timestamp(states(last_mow_helper), none) %}
+        {% set gap_ts = 0 if mow_ts is none else mow_ts + (calculated_gap_hours | float(24) * 3600) %}
+        {% set forecast_ts = now_ts + (forecast_lookahead_hours | int(3) * 3600) if rain_forecast_soon | bool else 0 %}
+        {% set wet_ts = now_ts + (dynamic_dry_hours | float(4) * 3600) if current_wet | bool else 0 %}
+        {{ [window_ts, dry_ts, gap_ts, forecast_ts, wet_ts] | max | timestamp_custom('%Y-%m-%d %H:%M:%S', true) }}
+      estimated_weekly_schedule: >-
+        {% set start_ts = as_timestamp(next_expected_start, none) %}
+        {% set sessions = calculated_sessions_per_week | int(1) %}
+        {% set gap = calculated_gap_hours | float(24) * 3600 %}
+        {% set duration = calculated_session_minutes | int(0) %}
+        {% if start_ts is none %}
+          Unable to estimate next mowing schedule.
+        {% else %}
+          {% set ns = namespace(lines=[]) %}
+          {% for index in range(sessions) %}
+            {% set ts = start_ts + (index * gap) %}
+            {% set ns.lines = ns.lines + [ts | timestamp_custom('%a %Y-%m-%d %H:%M', true) ~ ' for about ' ~ duration ~ ' min'] %}
+          {% endfor %}
+          {{ ns.lines | join('\n') }}
+        {% endif %}
+
+  - choose:
+      - conditions: "{{ next_expected_start_helper | length > 0 }}"
+        sequence:
+          - action: input_datetime.set_datetime
+            data:
+              entity_id: "{{ next_expected_start_helper }}"
+              datetime: "{{ next_expected_start }}"
+
+  - choose:
+      - conditions: "{{ weekly_schedule_helper | length > 0 }}"
+        sequence:
+          - action: input_text.set_value
+            data:
+              entity_id: "{{ weekly_schedule_helper }}"
+              value: "{{ estimated_weekly_schedule[-1000:] }}"
 
   - choose:
       - conditions: "{{ current_wet | bool }}"
@@ -615,6 +776,13 @@ action:
           - choose:
               - conditions: "{{ states(mower_entity) == 'mowing' }}"
                 sequence:
+                  - action: lawn_mower.dock
+                    target:
+                      entity_id: !input mower_entity
+                  - delay:
+                      minutes: !input command_response_delay_minutes
+                  - condition: template
+                    value_template: "{{ states(mower_entity) == 'mowing' }}"
                   - choose:
                       - conditions: "{{ persistent_notifications | bool }}"
                         sequence:
