@@ -328,7 +328,7 @@ class BLEClient:
             data = await asyncio.wait_for(self.queue.get(), timeout=10)
 
         except TimeoutError:
-            logger.error("Unable to get response from device: '%s'", self.address)
+            logger.warning("Unable to get response from device: '%s'", self.address)
             return None
 
         return data
@@ -409,7 +409,7 @@ class BLEClient:
 
             response_data = await self._read_data()
             if response_data is None:
-                logger.error(
+                logger.warning(
                     "Unable to communicate with device: '%s'", self.address
                 )
                 if self.is_connected():
@@ -438,7 +438,7 @@ class BLEClient:
         logger.info("starting scan...")
 
         if device is None:
-            logger.error("could not find device with address '%s'", self.address)
+            logger.warning("Could not find device with address '%s'", self.address)
             return ResponseResult.UNKNOWN_ERROR
 
         logger.info("connecting to device...")
@@ -492,7 +492,7 @@ class BLEClient:
                             value,
                         )
                     except Exception as e:
-                        logger.error(
+                        logger.debug(
                             "  [Characteristic] %s (%s), Error: %s",
                             char,
                             ",".join(char.properties),
