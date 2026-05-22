@@ -82,6 +82,16 @@ blueprint:
       selector:
         entity:
           domain: input_text
+    last_schedule_notification_helper:
+      name: Optional last schedule notification helper
+      description: >-
+        Optional input_text helper used to remember the last schedule summary
+        that was sent as a notification. Required for changed-only daily
+        schedule notifications.
+      default: ""
+      selector:
+        entity:
+          domain: input_text
     weekly_run_log_helper:
       name: Weekly run log helper
       description: >-
@@ -344,6 +354,15 @@ blueprint:
       default: "18:00:00"
       selector:
         time:
+    daily_schedule_notification_time:
+      name: Daily schedule notification time
+      description: >-
+        Time to check whether the estimated smart mowing schedule changed and
+        send a notification if it did. Configure the last schedule notification
+        helper to enable changed-only behavior.
+      default: "08:00:00"
+      selector:
+        time:
 
 mode: queued
 max_exceeded: silent
@@ -371,6 +390,9 @@ trigger:
   - platform: time
     id: weekly_report
     at: !input weekly_report_time
+  - platform: time
+    id: daily_schedule_report
+    at: !input daily_schedule_notification_time
 
 variables:
   mower_entity: !input mower_entity
@@ -383,6 +405,7 @@ variables:
   current_mow_cutting_start_helper: !input current_mow_cutting_start_helper
   next_expected_start_helper: !input next_expected_start_helper
   weekly_schedule_helper: !input weekly_schedule_helper
+  last_schedule_notification_helper: !input last_schedule_notification_helper
   weekly_run_log_helper: !input weekly_run_log_helper
   wetness_blockers: !input wetness_blockers
   lawn_area_m2: !input lawn_area_m2
@@ -730,14 +753,17 @@ action:
         {% set gap = calculated_gap_hours | float(24) * 3600 %}
         {% set duration = calculated_session_minutes | int(0) %}
         {% if start_ts is none %}
-          Unable to estimate next mowing schedule.
+          No schedule estimate
         {% else %}
-          {% set ns = namespace(lines=[]) %}
-          {% for index in range(sessions) %}
+          {% set shown = [sessions, 6] | min %}
+          {% set ns = namespace(times=[]) %}
+          {% for index in range(shown) %}
             {% set ts = start_ts + (index * gap) %}
-            {% set ns.lines = ns.lines + [ts | timestamp_custom('%a %Y-%m-%d %H:%M', true) ~ ' for about ' ~ duration ~ ' min'] %}
+            {% set ns.times = ns.times + [ts | timestamp_custom('%a %H:%M', true)] %}
           {% endfor %}
-          {{ ns.lines | join('\n') }}
+          Next {{ start_ts | timestamp_custom('%a %H:%M', true) }};
+          {{ sessions }}x/week, {{ duration }}m each;
+          {{ ns.times | join(', ') }}{% if sessions > shown %}, +{{ sessions - shown }} more{% endif %}
         {% endif %}
 
   - choose:
@@ -754,7 +780,45 @@ action:
           - action: input_text.set_value
             data:
               entity_id: "{{ weekly_schedule_helper }}"
-              value: "{{ estimated_weekly_schedule[-1000:] }}"
+              value: "{{ estimated_weekly_schedule[:255] }}"
+
+  - choose:
+      - conditions: "{{ trigger.id == 'daily_schedule_report' }}"
+        sequence:
+          - variables:
+              compact_schedule: "{{ estimated_weekly_schedule[:255] }}"
+              previous_notified_schedule: >-
+                {% if last_schedule_notification_helper | length > 0 %}
+                  {{ states(last_schedule_notification_helper) }}
+                {% else %}
+                  {{ compact_schedule }}
+                {% endif %}
+              schedule_changed: >-
+                {{ last_schedule_notification_helper | length > 0
+                   and compact_schedule != previous_notified_schedule }}
+          - choose:
+              - conditions: "{{ schedule_changed | bool }}"
+                sequence:
+                  - choose:
+                      - conditions: "{{ persistent_notifications | bool }}"
+                        sequence:
+                          - action: persistent_notification.create
+                            data:
+                              title: Smart mowing schedule changed
+                              message: "{{ compact_schedule }}"
+                              notification_id: smart_mowing_schedule_changed
+                  - choose:
+                      - conditions: "{{ phone_notify_service | length > 0 }}"
+                        sequence:
+                          - action: "{{ phone_notify_service }}"
+                            data:
+                              title: Smart mowing schedule changed
+                              message: "{{ compact_schedule }}"
+                  - action: input_text.set_value
+                    data:
+                      entity_id: "{{ last_schedule_notification_helper }}"
+                      value: "{{ compact_schedule }}"
+          - stop: Daily schedule notification checked.
 
   - choose:
       - conditions: "{{ current_wet | bool }}"

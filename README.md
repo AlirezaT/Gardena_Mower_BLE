@@ -154,6 +154,7 @@ Optional helpers:
   mowing run
 - `input_datetime` for the next expected smart mowing start
 - `input_text` for the estimated smart mowing schedule for the coming week
+- `input_text` for the last schedule summary that was sent as a notification
 
 The blueprint can also send persistent notifications and, optionally, a mobile
 app notification service such as `notify.mobile_app_phone_name`.
@@ -167,6 +168,8 @@ Monitoring features:
 - alert if a mowing run ends much earlier than planned
 - store the next expected mowing start and an estimated weekly plan in optional
   helpers
+- send a daily schedule-changed notification when the estimated smart mowing
+  plan changes
 - send a weekly persistent report with run day, start time, end time, and
   duration
 
