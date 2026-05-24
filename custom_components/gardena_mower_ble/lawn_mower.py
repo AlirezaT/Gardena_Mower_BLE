@@ -137,8 +137,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             await self.coordinator.mower.mower_resume()
             await asyncio.sleep(1)
 
-        await self.coordinator.mower.command("SetOverrideParkUntilNextStart")
-        #  await self.coordinator.mower.mower_park()
+        await self.coordinator.mower.mower_park()
         await self.coordinator.async_request_refresh()
         self.coordinator.schedule_action_refresh()
 
