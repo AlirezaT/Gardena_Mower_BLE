@@ -133,7 +133,7 @@ Inputs include:
 - weekly coverage multiplier
 - minimum and maximum sessions per week
 - minimum and maximum session length
-- allowed mowing time window
+- allowed mowing time window, either fixed or relative to sunrise/sunset
 - rain forecast thresholds
 - drying delay after rain
 - optional binary sensors/helpers that block mowing, such as Smart Irrigation,
@@ -156,6 +156,30 @@ Optional helpers:
 - `input_text` for the estimated smart mowing schedule for the coming week
 - `input_text` for the last schedule summary that was sent as a notification
 
+### Manual Irrigation Button
+
+If you manually irrigate the lawn, you can mark the grass as wet by setting the
+same `input_datetime` helper used for last rain/wetness detection. Add this
+script in Home Assistant and expose it as a button on your dashboard:
+
+```yaml
+script:
+  mark_lawn_as_wet:
+    alias: Mark lawn as wet
+    icon: mdi:water
+    sequence:
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.lawn_last_rain
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+```
+
+Replace `input_datetime.lawn_last_rain` with the helper you selected as the
+blueprint's **Last rain helper**. After pressing the button, the blueprint will
+treat manual irrigation like rain and wait for the configured drying time before
+mowing again.
+
 The blueprint can also send persistent notifications and, optionally, a mobile
 app notification service such as `notify.mobile_app_phone_name`.
 
@@ -166,7 +190,7 @@ Monitoring features:
 - alert if a dock command after wet weather does not stop mowing
 - alert if wet weather blocks mowing for too many days
 - alert if a mowing run ends much earlier than planned
-- store the next expected mowing start and an estimated weekly plan in optional
+- store the next expected mowing start and an estimated weekly plan, respecting the mowing window, in optional
   helpers
 - send a daily schedule-changed notification when the estimated smart mowing
   plan changes

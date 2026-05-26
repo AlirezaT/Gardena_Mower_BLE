@@ -192,14 +192,58 @@ blueprint:
           mode: box
     allowed_start_time:
       name: Earliest mowing start
+      description: Used when the start reference is Fixed time.
       default: "09:00:00"
       selector:
         time:
     allowed_end_time:
       name: Latest mowing start
+      description: Used when the end reference is Fixed time.
       default: "18:00:00"
       selector:
         time:
+    allowed_start_reference:
+      name: Earliest mowing start reference
+      description: Choose whether the mowing window starts at a fixed time, sunrise, or sunset.
+      default: Fixed time
+      selector:
+        select:
+          options:
+            - Fixed time
+            - Sunrise
+            - Sunset
+    allowed_start_sun_offset_minutes:
+      name: Earliest mowing start sun offset
+      description: Minutes added to the sunrise/sunset start reference. Use negative values to start before it.
+      default: 60
+      selector:
+        number:
+          min: -720
+          max: 720
+          step: 5
+          unit_of_measurement: min
+          mode: box
+    allowed_end_reference:
+      name: Latest mowing start reference
+      description: Choose whether the mowing window ends at a fixed time, sunrise, or sunset.
+      default: Fixed time
+      selector:
+        select:
+          options:
+            - Fixed time
+            - Sunrise
+            - Sunset
+    allowed_end_sun_offset_minutes:
+      name: Latest mowing start sun offset
+      description: Minutes added to the sunrise/sunset end reference. Use negative values to finish before it.
+      default: -60
+      selector:
+        number:
+          min: -720
+          max: 720
+          step: 5
+          unit_of_measurement: min
+          mode: box
     check_minutes_pattern:
       name: Check interval
       description: "Time pattern minutes field. Examples: /15, /30, 0."
@@ -418,6 +462,10 @@ variables:
   minimum_gap_override_hours: !input minimum_gap_override_hours
   allowed_start_time: !input allowed_start_time
   allowed_end_time: !input allowed_end_time
+  allowed_start_reference: !input allowed_start_reference
+  allowed_start_sun_offset_minutes: !input allowed_start_sun_offset_minutes
+  allowed_end_reference: !input allowed_end_reference
+  allowed_end_sun_offset_minutes: !input allowed_end_sun_offset_minutes
   forecast_lookahead_hours: !input forecast_lookahead_hours
   precipitation_threshold_mm: !input precipitation_threshold_mm
   precipitation_probability_threshold: !input precipitation_probability_threshold
@@ -506,13 +554,46 @@ variables:
     {% else %}
       {{ (168 / (calculated_sessions_per_week | int(1))) | round(1) }}
     {% endif %}
-  within_allowed_time: >-
-    {% set start = today_at(allowed_start_time) %}
-    {% set end = today_at(allowed_end_time) %}
-    {% if start <= end %}
-      {{ start <= now() <= end }}
+  today_sunrise_ts: >-
+    {% set next_rising = as_timestamp(state_attr('sun.sun', 'next_rising'), none) %}
+    {% if next_rising is none %}
+      {{ as_timestamp(today_at('06:00:00')) }}
+    {% elif is_state('sun.sun', 'above_horizon') %}
+      {{ next_rising - 86400 }}
     {% else %}
-      {{ now() >= start or now() <= end }}
+      {{ next_rising }}
+    {% endif %}
+  today_sunset_ts: >-
+    {% set next_setting = as_timestamp(state_attr('sun.sun', 'next_setting'), none) %}
+    {% if next_setting is none %}
+      {{ as_timestamp(today_at('18:00:00')) }}
+    {% else %}
+      {{ next_setting }}
+    {% endif %}
+  allowed_start_ts: >-
+    {% if allowed_start_reference == 'Sunrise' %}
+      {{ today_sunrise_ts | float(0) + allowed_start_sun_offset_minutes | float(0) * 60 }}
+    {% elif allowed_start_reference == 'Sunset' %}
+      {{ today_sunset_ts | float(0) + allowed_start_sun_offset_minutes | float(0) * 60 }}
+    {% else %}
+      {{ as_timestamp(today_at(allowed_start_time)) }}
+    {% endif %}
+  allowed_end_ts: >-
+    {% if allowed_end_reference == 'Sunrise' %}
+      {{ today_sunrise_ts | float(0) + allowed_end_sun_offset_minutes | float(0) * 60 }}
+    {% elif allowed_end_reference == 'Sunset' %}
+      {{ today_sunset_ts | float(0) + allowed_end_sun_offset_minutes | float(0) * 60 }}
+    {% else %}
+      {{ as_timestamp(today_at(allowed_end_time)) }}
+    {% endif %}
+  within_allowed_time: >-
+    {% set start = allowed_start_ts | float(0) %}
+    {% set end = allowed_end_ts | float(0) %}
+    {% set now_ts = as_timestamp(now()) %}
+    {% if start <= end %}
+      {{ start <= now_ts <= end }}
+    {% else %}
+      {{ now_ts >= start or now_ts <= end }}
     {% endif %}
   use_cutting_time_sensor: >-
     {{ total_cutting_time_sensor | length > 0
@@ -727,38 +808,68 @@ action:
            and mower_state not in ['mowing', 'returning', 'error', 'unavailable', 'unknown'] }}
       next_expected_start: >-
         {% set now_ts = as_timestamp(now()) %}
-        {% set allowed_start_ts = as_timestamp(today_at(allowed_start_time)) %}
-        {% set allowed_end_ts = as_timestamp(today_at(allowed_end_time)) %}
-        {% if allowed_start_ts <= allowed_end_ts %}
-          {% if now_ts <= allowed_start_ts %}
-            {% set window_ts = allowed_start_ts %}
-          {% elif now_ts <= allowed_end_ts %}
-            {% set window_ts = now_ts %}
-          {% else %}
-            {% set window_ts = allowed_start_ts + 86400 %}
-          {% endif %}
-        {% else %}
-          {% set window_ts = now_ts if now_ts >= allowed_start_ts or now_ts <= allowed_end_ts else allowed_start_ts %}
-        {% endif %}
+        {% set day_start = as_timestamp(today_at('00:00:00')) %}
+        {% set base_start = allowed_start_ts | float(0) %}
+        {% set base_end = allowed_end_ts | float(0) %}
         {% set rain_ts = as_timestamp(states(last_rain_helper), none) %}
         {% set dry_ts = 0 if rain_ts is none else rain_ts + (dynamic_dry_hours | float(4) * 3600) %}
         {% set mow_ts = as_timestamp(states(last_mow_helper), none) %}
         {% set gap_ts = 0 if mow_ts is none else mow_ts + (calculated_gap_hours | float(24) * 3600) %}
         {% set forecast_ts = now_ts + (forecast_lookahead_hours | int(3) * 3600) if rain_forecast_soon | bool else 0 %}
         {% set wet_ts = now_ts + (dynamic_dry_hours | float(4) * 3600) if current_wet | bool else 0 %}
-        {{ [window_ts, dry_ts, gap_ts, forecast_ts, wet_ts] | max | timestamp_custom('%Y-%m-%d %H:%M:%S', true) }}
+        {% set target_ts = [now_ts, dry_ts, gap_ts, forecast_ts, wet_ts] | max %}
+        {% set day_offset = (((target_ts - day_start) // 86400) | int) * 86400 %}
+        {% set start = base_start + day_offset %}
+        {% set end = base_end + day_offset %}
+        {% if start <= end %}
+          {% if target_ts <= start %}
+            {% set window_ts = start %}
+          {% elif target_ts <= end %}
+            {% set window_ts = target_ts %}
+          {% else %}
+            {% set window_ts = start + 86400 %}
+          {% endif %}
+        {% else %}
+          {% if target_ts >= start or target_ts <= end %}
+            {% set window_ts = target_ts %}
+          {% else %}
+            {% set window_ts = start %}
+          {% endif %}
+        {% endif %}
+        {{ window_ts | timestamp_custom('%Y-%m-%d %H:%M:%S', true) }}
       estimated_weekly_schedule: >-
         {% set start_ts = as_timestamp(next_expected_start, none) %}
         {% set sessions = calculated_sessions_per_week | int(1) %}
         {% set gap = calculated_gap_hours | float(24) * 3600 %}
         {% set duration = calculated_session_minutes | int(0) %}
+        {% set day_start = as_timestamp(today_at('00:00:00')) %}
+        {% set base_start = allowed_start_ts | float(0) %}
+        {% set base_end = allowed_end_ts | float(0) %}
         {% if start_ts is none %}
           No schedule estimate
         {% else %}
           {% set shown = [sessions, 6] | min %}
           {% set ns = namespace(times=[]) %}
           {% for index in range(shown) %}
-            {% set ts = start_ts + (index * gap) %}
+            {% set raw_ts = start_ts + (index * gap) %}
+            {% set day_offset = (((raw_ts - day_start) // 86400) | int) * 86400 %}
+            {% set start = base_start + day_offset %}
+            {% set end = base_end + day_offset %}
+            {% if start <= end %}
+              {% if raw_ts <= start %}
+                {% set ts = start %}
+              {% elif raw_ts <= end %}
+                {% set ts = raw_ts %}
+              {% else %}
+                {% set ts = start + 86400 %}
+              {% endif %}
+            {% else %}
+              {% if raw_ts >= start or raw_ts <= end %}
+                {% set ts = raw_ts %}
+              {% else %}
+                {% set ts = start %}
+              {% endif %}
+            {% endif %}
             {% set ns.times = ns.times + [ts | timestamp_custom('%a %H:%M', true)] %}
           {% endfor %}
           Next {{ start_ts | timestamp_custom('%a %H:%M', true) }};
