@@ -208,12 +208,22 @@ class Mower(BLEClient):
             return None
         return MowerState(state)
 
-    async def mower_next_start_time(self) -> dt.datetime | None:
+    async def mower_next_start_time(
+        self, timezone: dt.tzinfo | None = None
+    ) -> dt.datetime | None:
         """Query the mower next start time"""
         next_start_time = await self.command("GetNextStartTime")
         if next_start_time is None or next_start_time == 0:
             return None
-        return dt.datetime.fromtimestamp(next_start_time, dt.UTC)
+        # The mower reports this value as seconds since epoch in local time, not
+        # UTC. Decode the timestamp as a UTC wall-clock value, then attach the
+        # desired local timezone so Home Assistant displays the actual schedule.
+        local_time = dt.datetime.fromtimestamp(next_start_time, dt.UTC).replace(
+            tzinfo=None
+        )
+        return local_time.replace(
+            tzinfo=timezone or dt.datetime.now().astimezone().tzinfo
+        )
 
     async def mower_activity(self) -> MowerActivity | None:
         """Query the mower activity"""

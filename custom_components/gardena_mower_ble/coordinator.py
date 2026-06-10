@@ -14,6 +14,7 @@ from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, LOGGER
 
@@ -177,7 +178,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if data["state"] is None:
                 raise UpdateFailed("Error getting data from device")
             
-            data["next_start_time"] = await self.mower.mower_next_start_time()
+            data["next_start_time"] = await self.mower.mower_next_start_time(
+                dt_util.DEFAULT_TIME_ZONE
+            )
             LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
 #            if data["next_start_time"] is None:
 #                await self._async_find_device()
