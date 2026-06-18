@@ -83,7 +83,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         return datetime.now() - self._last_successful_update <= RECENT_DATA_TIMEOUT
 
-    def _poll_due(self, timestamp_attr: str, interval: timedelta, now: datetime) -> bool:
+    def _poll_due(
+        self, timestamp_attr: str, interval: timedelta, now: datetime
+    ) -> bool:
         """Return true when a slower polling group should be refreshed."""
         last_poll = getattr(self, timestamp_attr)
         if last_poll is None or now - last_poll >= interval:
@@ -102,7 +104,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         async with self.mower.lock:
                             pass
                 except TimeoutError:
-                    LOGGER.debug("Timed out waiting for active mower command during shutdown")
+                    LOGGER.debug(
+                        "Timed out waiting for active mower command during shutdown"
+                    )
             await self.mower.disconnect()
         if self._delayed_refresh_cancel is not None:
             self._delayed_refresh_cancel()
@@ -140,7 +144,6 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Poll the device."""
         LOGGER.debug("Polling device")
-        
 
         data: dict[str, Any] = dict(self._last_data)
         data["ManualMowingDuration"] = self.manual_mowing_duration_hours
@@ -177,14 +180,20 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             LOGGER.debug("state:" + str(data["state"]))
             if data["state"] is None:
                 raise UpdateFailed("Error getting data from device")
-            
+
+            data["mode"] = await self.mower.mower_mode()
+            LOGGER.debug("mode: %s", data["mode"])
+            data["override"] = await self.mower.mower_override_status()
+            LOGGER.debug("override: %s", data["override"])
+            data["permanentPark"] = self.mower.is_permanently_parked_state(
+                data["mode"], data["override"]
+            )
+            LOGGER.debug("permanentPark: %s", data["permanentPark"])
+
             data["next_start_time"] = await self.mower.mower_next_start_time(
                 dt_util.DEFAULT_TIME_ZONE
             )
             LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
-#            if data["next_start_time"] is None:
-#                await self._async_find_device()
-#                raise UpdateFailed("Error getting data from device")
 
             data["errorCode"] = await self.mower.command("GetError")
             LOGGER.debug("errorCode: " + str(data["errorCode"]))
@@ -192,7 +201,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["NumberOfMessages"] = await self.mower.command("GetNumberOfMessages")
             LOGGER.debug("NumberOfMessages: " + str(data["NumberOfMessages"]))
 
-            data["RemainingChargingTime"] = await self.mower.command("GetRemainingChargingTime")
+            data["RemainingChargingTime"] = await self.mower.command(
+                "GetRemainingChargingTime"
+            )
             LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
 
             await self._async_update_static_info(data)
@@ -235,7 +246,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
                     LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
                 except KeyError:
-                    LOGGER.debug("GetDrivePastWire not found in protocol.json - skipping")
+                    LOGGER.debug(
+                        "GetDrivePastWire not found in protocol.json - skipping"
+                    )
 
             if poll_settings and self._sensor_control_supported:
                 try:
@@ -302,7 +315,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data["ChargingStationLoopSignalGeneration"] = bool(
                             loop_signal_generation
                         )
-                        data["EcoMode"] = not data["ChargingStationLoopSignalGeneration"]
+                        data["EcoMode"] = not data[
+                            "ChargingStationLoopSignalGeneration"
+                        ]
                         LOGGER.debug(
                             "ChargingStationLoopSignalGeneration: %s",
                             data["ChargingStationLoopSignalGeneration"],
@@ -480,7 +495,11 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if poll_realtime and self._signal_quality_supported and "a0Signal" not in data:
+            if (
+                poll_realtime
+                and self._signal_quality_supported
+                and "a0Signal" not in data
+            ):
                 try:
                     result, signal_quality = await self.mower.command_response(
                         "GetSignalQuality", warn_on_error=False
@@ -567,7 +586,10 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     result, supported_accessories = await self.mower.command_response(
                         "GetSupportedAccessories", warn_on_error=False
                     )
-                    if result is ResponseResult.OK and supported_accessories is not None:
+                    if (
+                        result is ResponseResult.OK
+                        and supported_accessories is not None
+                    ):
                         data["supportedAccessories"] = supported_accessories
                         data["garageSupported"] = bool(supported_accessories & 1)
                         data["zoneProtectSupported"] = bool(supported_accessories & 2)
@@ -591,11 +613,10 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._last_successful_update = datetime.now()
             self._last_data = data
 
-
         except BleakError as err:
             LOGGER.error("Error getting data from device")
             raise UpdateFailed("Error getting data from device") from err
-        
+
         LOGGER.debug("MOWER DATA: %s", data)
 
         return data

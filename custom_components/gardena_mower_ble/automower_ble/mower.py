@@ -17,6 +17,7 @@ from .protocol import (
     MowerState,
     MowerActivity,
     ModeOfOperation,
+    OverrideAction,
     ResponseResult,
     TaskInformation,
 )
@@ -232,6 +233,72 @@ class Mower(BLEClient):
             return None
         return MowerActivity(activity)
 
+    async def mower_mode(self) -> ModeOfOperation | None:
+        """Query the mower mode of operation."""
+        mode = await self.command("GetMode")
+        if mode is None:
+            return None
+        try:
+            return ModeOfOperation(mode)
+        except ValueError:
+            logger.debug("Unknown mower mode: %s", mode)
+            return None
+
+    async def mower_override_status(self) -> dict[str, int | OverrideAction] | None:
+        """Query the current mower override status."""
+        result, override = await self.command_response(
+            "GetOverride", warn_on_error=False
+        )
+        if result is not ResponseResult.OK or override is None:
+            return None
+
+        try:
+            action = OverrideAction(override["action"])
+        except ValueError:
+            logger.debug("Unknown mower override action: %s", override["action"])
+            action = OverrideAction.NONE
+
+        return {
+            "action": action,
+            "startTime": override["startTime"],
+            "duration": override["duration"],
+        }
+
+    @staticmethod
+    def is_permanently_parked_state(
+        mode: ModeOfOperation | None, override: dict | None
+    ) -> bool:
+        """Return true if mode/override represent park until further notice."""
+        if mode is ModeOfOperation.HOME:
+            return True
+        return (
+            override is not None
+            and override.get("action") is OverrideAction.FORCEDPARK
+            and override.get("duration") == 0
+        )
+
+    async def mower_is_permanently_parked(self) -> bool:
+        """Return true if the mower is parked until further notice."""
+        mode = await self.mower_mode()
+        override = await self.mower_override_status()
+        return self.is_permanently_parked_state(mode, override)
+
+    async def mower_resume_schedule(self) -> ResponseResult:
+        """Return the mower to scheduled/automatic operation."""
+        result, _ = await self.command_response("ClearOverride", warn_on_error=False)
+        if result is not ResponseResult.OK:
+            logger.debug(
+                "ClearOverride returned %s while resuming schedule", result.name
+            )
+
+        result, _ = await self.command_response("SetMode", mode=ModeOfOperation.AUTO)
+        return result
+
+    async def mower_park_permanently(self) -> ResponseResult:
+        """Park the mower until further notice."""
+        result, _ = await self.command_response("SetMode", mode=ModeOfOperation.HOME)
+        return result
+
     async def mower_override(self, duration_hours: float = 3.0) -> None:
         """
         Force the mower to run for the specified duration in hours.
@@ -239,8 +306,9 @@ class Mower(BLEClient):
         if duration_hours <= 0:
             raise ValueError("Duration must be greater than 0")
 
-        # Set mode of operation to auto:
-        await self.command("SetMode", mode=ModeOfOperation.AUTO)
+        result = await self.mower_resume_schedule()
+        if result is not ResponseResult.OK:
+            raise RuntimeError(f"SetMode returned {result.name}")
 
         # Set the duration of operation:
         await self.command("SetOverrideMow", duration=int(duration_hours * 3600))
@@ -264,6 +332,14 @@ class Mower(BLEClient):
         a manual mowing override.
         """
         async with self.lock:
+            result, _ = await self.command_response_locked(
+                "ClearOverride", warn_on_error=False
+            )
+            if result is not ResponseResult.OK:
+                logger.debug(
+                    "ClearOverride returned %s while starting SpotCut", result.name
+                )
+
             result, _ = await self.command_response_locked(
                 "SetMode", mode=ModeOfOperation.AUTO
             )
@@ -311,15 +387,18 @@ class Mower(BLEClient):
         result, _ = await self.command_response("Pause")
         return result
 
-    async def mower_park(self):
-        # Duration 0 matches the app's "park until further notice/permanently"
-        # option. "Park until next start" can resume immediately when a manual
-        # or smart schedule is still active.
-        await self.command("SetOverridePark", duration=0)
+    async def mower_park(self) -> ResponseResult:
+        result, task_count = await self.command_response(
+            "GetNumberOfTasks", warn_on_error=False
+        )
+        if result is not ResponseResult.OK:
+            return result
 
-        # Request trigger to start, the response validation is expected to fail
-        # [AT] Seems not needed for Gardena. It resumes the mower!
-        # await self.command("StartTrigger")
+        if task_count:
+            result, _ = await self.command_response("SetOverrideParkUntilNextStart")
+            return result
+
+        return await self.mower_park_permanently()
 
     async def get_task(self, taskid: int) -> TaskInformation | None:
         """
@@ -389,6 +468,10 @@ class Mower(BLEClient):
                     "Schedule duration must be between 1 minute and 24 hours"
                 )
 
+        was_permanently_parked = False
+        if tasks:
+            was_permanently_parked = await self.mower_is_permanently_parked()
+
         await self._expect_ok("StartTaskTransaction")
         await self._expect_ok("DeleteAllTask")
 
@@ -422,6 +505,10 @@ class Mower(BLEClient):
             )
 
         await self._expect_ok("CommitTaskTransaction")
+        if tasks and was_permanently_parked:
+            result = await self.mower_resume_schedule()
+            if result is not ResponseResult.OK:
+                raise RuntimeError(f"SetMode returned {result.name}")
 
     async def clear_tasks(self) -> None:
         """Remove all weekly schedule tasks from the mower."""

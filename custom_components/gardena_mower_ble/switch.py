@@ -17,6 +17,7 @@ from .entity import GardenaMowerBleDescriptorEntity
 
 ALWAYS_CREATE_SWITCHES = {
     "EcoMode",
+    "permanentPark",
 }
 
 
@@ -35,6 +36,11 @@ DESCRIPTIONS = (
         key="spotCutting",
         name="Spot Cut",
         icon="mdi:content-cut",
+    ),
+    SwitchEntityDescription(
+        key="permanentPark",
+        name="Park Until Further Notice",
+        icon="mdi:home-lock",
     ),
     GardenaMowerBleSwitchEntityDescription(
         key="SensorControlEnabled",
@@ -76,7 +82,7 @@ DESCRIPTIONS = (
             value_parameter="corridorCut",
         )
         for starting_point_id in range(1, 4)
-    )
+    ),
 )
 
 
@@ -92,6 +98,8 @@ async def async_setup_entry(
         (
             GardenaMowerBleSpotCutSwitch(coordinator, description)
             if description.key == "spotCutting"
+            else GardenaMowerBlePermanentParkSwitch(coordinator, description)
+            if description.key == "permanentPark"
             else GardenaMowerBleSwitch(coordinator, description)
         )
         for description in DESCRIPTIONS
@@ -169,6 +177,55 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
         result = await self.coordinator.mower.mower_stop_spot_cut()
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Stop Spot Cut failed: {result.name}")
+
+        await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
+
+    async def _async_ensure_connected(self) -> None:
+        """Connect to the mower if needed."""
+        if self.coordinator.mower.is_connected():
+            return
+
+        device = bluetooth.async_ble_device_from_address(
+            self.coordinator.hass, self.coordinator.address, connectable=True
+        )
+        if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
+            raise HomeAssistantError("Unable to connect to mower")
+
+
+class GardenaMowerBlePermanentParkSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
+    """Representation of the park until further notice switch."""
+
+    entity_description: SwitchEntityDescription
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return true if the mower is parked until further notice."""
+        value = self.coordinator.data.get(self.entity_description.key)
+        if value is None:
+            return None
+        return bool(value)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Park until further notice."""
+        await self._async_ensure_connected()
+        result = await self.coordinator.mower.mower_park_permanently()
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(
+                f"{self.entity_description.name} failed: {result.name}"
+            )
+
+        await self.coordinator.async_request_refresh()
+        self.coordinator.schedule_action_refresh()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Return the mower to scheduled operation."""
+        await self._async_ensure_connected()
+        result = await self.coordinator.mower.mower_resume_schedule()
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(
+                f"{self.entity_description.name} failed: {result.name}"
+            )
 
         await self.coordinator.async_request_refresh()
         self.coordinator.schedule_action_refresh()

@@ -11,6 +11,7 @@ from homeassistant.components.lawn_mower import (
     LawnMowerEntityFeature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
@@ -137,7 +138,10 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             await self.coordinator.mower.mower_resume()
             await asyncio.sleep(1)
 
-        await self.coordinator.mower.mower_park()
+        result = await self.coordinator.mower.mower_park()
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Dock failed: {result.name}")
+
         await self.coordinator.async_request_refresh()
         self.coordinator.schedule_action_refresh()
 
