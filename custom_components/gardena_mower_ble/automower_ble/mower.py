@@ -262,6 +262,7 @@ class Mower(BLEClient):
             "action": action,
             "startTime": override["startTime"],
             "duration": override["duration"],
+            "reserved": override["reserved"],
         }
 
     @staticmethod

@@ -190,9 +190,12 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             LOGGER.debug("permanentPark: %s", data["permanentPark"])
 
-            data["next_start_time"] = await self.mower.mower_next_start_time(
-                dt_util.DEFAULT_TIME_ZONE
-            )
+            if data["permanentPark"]:
+                data["next_start_time"] = None
+            else:
+                data["next_start_time"] = await self.mower.mower_next_start_time(
+                    dt_util.DEFAULT_TIME_ZONE
+                )
             LOGGER.debug("next_start_time: " + str(data["next_start_time"]))
 
             data["errorCode"] = await self.mower.command("GetError")
