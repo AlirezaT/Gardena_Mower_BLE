@@ -238,6 +238,7 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
             result = await self.coordinator.mower.mower_park_permanently()
             if result is not ResponseResult.OK:
                 raise HomeAssistantError(f"Restore previous state failed: {result.name}")
+            await self.coordinator.mower.mower_resume()
             return {
                 "activity": MowerActivity.GOING_HOME,
                 "state": MowerState.IN_OPERATION,
