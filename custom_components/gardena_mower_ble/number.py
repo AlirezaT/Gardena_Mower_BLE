@@ -15,7 +15,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.protocol import ResponseResult
 from .const import LOGGER
 from .entity import GardenaMowerBleDescriptorEntity
 
@@ -176,11 +175,13 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
         if description.starting_point_id is not None:
             kwargs["startingPointId"] = description.starting_point_id
 
-        result, _ = await self.coordinator.mower.command_response(
+        native_value = round(value * description.scale)
+        await self._async_setting_command_response(
             description.set_command,
+            human_name=description.name or description.key,
             **kwargs,
         )
-        if result is not ResponseResult.OK:
-            raise HomeAssistantError(f"{description.name} failed: {result.name}")
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.data[description.key] = native_value
+        self.async_write_ha_state()
+        self.coordinator.schedule_settings_refresh()

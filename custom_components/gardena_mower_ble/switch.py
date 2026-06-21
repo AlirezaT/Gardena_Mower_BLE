@@ -132,20 +132,26 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
     async def _async_set_enabled(self, enabled: bool) -> None:
         """Enable or disable the starting point."""
         description = self.entity_description
+        state_enabled = enabled
         if description.invert_value:
             enabled = not enabled
         request = {description.value_parameter: enabled}
         if description.starting_point_id is not None:
             request["startingPointId"] = description.starting_point_id
 
-        result, _ = await self.coordinator.mower.command_response(
+        await self._async_setting_command_response(
             description.set_command,
+            human_name=description.name or description.key,
             **request,
         )
-        if result is not ResponseResult.OK:
-            raise HomeAssistantError(f"{description.name} failed: {result.name}")
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.data[description.key] = state_enabled
+        if description.key == "EcoMode":
+            self.coordinator.data["ChargingStationLoopSignalGeneration"] = (
+                not state_enabled
+            )
+        self.async_write_ha_state()
+        self.coordinator.schedule_settings_refresh()
 
 
 class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):

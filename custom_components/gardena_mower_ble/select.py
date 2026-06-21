@@ -11,7 +11,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.protocol import ResponseResult
 from .entity import GardenaMowerBleDescriptorEntity
 
 WIRE_OPTIONS_BY_ID = {
@@ -108,17 +107,19 @@ class GardenaMowerBleSelect(GardenaMowerBleDescriptorEntity, SelectEntity):
             raise HomeAssistantError(f"Unknown option: {option}")
 
         description = self.entity_description
+        option_id = description.ids_by_option[option]
         request = {
-            description.value_parameter: description.ids_by_option[option],
+            description.value_parameter: option_id,
         }
         if description.starting_point_id is not None:
             request["startingPointId"] = description.starting_point_id
 
-        result, _ = await self.coordinator.mower.command_response(
+        await self._async_setting_command_response(
             description.set_command,
+            human_name=description.name or description.key,
             **request,
         )
-        if result is not ResponseResult.OK:
-            raise HomeAssistantError(f"{description.name} failed: {result.name}")
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.data[description.key] = option_id
+        self.async_write_ha_state()
+        self.coordinator.schedule_settings_refresh()

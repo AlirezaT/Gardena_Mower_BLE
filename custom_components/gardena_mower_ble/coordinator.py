@@ -27,6 +27,7 @@ SETTINGS_POLL_INTERVAL = timedelta(minutes=2)
 DIAGNOSTIC_POLL_INTERVAL = timedelta(minutes=5)
 RECENT_DATA_TIMEOUT = timedelta(minutes=5)
 ACTION_REFRESH_DELAY = 4
+SETTINGS_REFRESH_DELAY = 4
 DEFAULT_MANUAL_MOWING_DURATION_HOURS = 3.0
 
 
@@ -76,6 +77,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_diagnostic_poll: datetime | None = None
         self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
         self._delayed_refresh_cancel = None
+        self._delayed_settings_refresh_cancel = None
 
     def has_recent_data(self) -> bool:
         """Return true when the coordinator has recent cached mower data."""
@@ -111,6 +113,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._delayed_refresh_cancel is not None:
             self._delayed_refresh_cancel()
             self._delayed_refresh_cancel = None
+        if self._delayed_settings_refresh_cancel is not None:
+            self._delayed_settings_refresh_cancel()
+            self._delayed_settings_refresh_cancel = None
 
     def schedule_action_refresh(self) -> None:
         """Schedule one follow-up refresh after an action state transition."""
@@ -124,6 +129,22 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._delayed_refresh_cancel = async_call_later(
             self.hass,
             ACTION_REFRESH_DELAY,
+            _refresh,
+        )
+
+    def schedule_settings_refresh(self) -> None:
+        """Schedule one follow-up refresh that bypasses the settings poll cache."""
+        if self._delayed_settings_refresh_cancel is not None:
+            self._delayed_settings_refresh_cancel()
+
+        async def _refresh(_now) -> None:
+            self._delayed_settings_refresh_cancel = None
+            self._last_settings_poll = None
+            await self.async_request_refresh()
+
+        self._delayed_settings_refresh_cancel = async_call_later(
+            self.hass,
+            SETTINGS_REFRESH_DELAY,
             _refresh,
         )
 
