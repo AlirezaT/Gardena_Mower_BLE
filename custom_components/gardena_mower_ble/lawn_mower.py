@@ -120,9 +120,11 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
                 return
 
-        await self.coordinator.mower.mower_override(
+        result = await self.coordinator.mower.mower_override(
             self.coordinator.manual_mowing_duration_hours
         )
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Start mowing failed: {result.name}")
         self.coordinator.update_cached_data(
             {
                 "activity": MowerActivity.MOWING,

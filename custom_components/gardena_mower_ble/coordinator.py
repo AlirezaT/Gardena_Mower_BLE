@@ -27,7 +27,7 @@ SETTINGS_POLL_INTERVAL = timedelta(minutes=2)
 DIAGNOSTIC_POLL_INTERVAL = timedelta(minutes=5)
 RECENT_DATA_TIMEOUT = timedelta(minutes=5)
 ACTION_REFRESH_DELAY = 2
-SETTINGS_REFRESH_DELAY = 2
+SETTINGS_REFRESH_DELAY = 4
 DEFAULT_MANUAL_MOWING_DURATION_HOURS = 3.0
 
 
@@ -78,6 +78,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
         self._delayed_refresh_cancel = None
         self._delayed_settings_refresh_cancel = None
+        self._cache_update_generation = 0
+        self._optimistic_update_generations: dict[str, int] = {}
 
     def update_cached_data(
         self,
@@ -90,8 +92,42 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data.update(updates)
         if recalculate_starting_point_share:
             self._update_starting_point_charging_station_share(data)
+            updates = {
+                **updates,
+                "StartingPointChargingStationProportion": data[
+                    "StartingPointChargingStationProportion"
+                ],
+            }
+        self._cache_update_generation += 1
+        for key in updates:
+            self._optimistic_update_generations[key] = self._cache_update_generation
         self._last_data = data
         self.async_set_updated_data(data)
+
+    def _preserve_optimistic_updates(
+        self, data: dict[str, Any], poll_started_generation: int
+    ) -> dict[str, Any]:
+        """Keep command updates from being overwritten by an older in-flight poll."""
+        preserve_keys = [
+            key
+            for key, generation in self._optimistic_update_generations.items()
+            if generation > poll_started_generation
+        ]
+        for key in preserve_keys:
+            if key in self._last_data:
+                data[key] = self._last_data[key]
+
+        self._optimistic_update_generations = {
+            key: generation
+            for key, generation in self._optimistic_update_generations.items()
+            if generation > poll_started_generation
+        }
+        if preserve_keys:
+            LOGGER.debug(
+                "Preserved optimistic mower updates during overlapping poll: %s",
+                sorted(preserve_keys),
+            )
+        return data
 
     @staticmethod
     def _update_starting_point_charging_station_share(data: dict[str, Any]) -> None:
@@ -195,6 +231,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Poll the device."""
         LOGGER.debug("Polling device")
 
+        poll_started_generation = self._cache_update_generation
         data: dict[str, Any] = dict(self._last_data)
         data["ManualMowingDuration"] = self.manual_mowing_duration_hours
         data["modelName"] = self.model
@@ -660,6 +697,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
+            data = self._preserve_optimistic_updates(data, poll_started_generation)
             self._last_successful_update = datetime.now()
             self._last_data = data
 

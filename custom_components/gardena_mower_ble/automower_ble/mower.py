@@ -314,22 +314,39 @@ class Mower(BLEClient):
         result, _ = await self.command_response("SetMode", mode=ModeOfOperation.HOME)
         return result
 
-    async def mower_override(self, duration_hours: float = 3.0) -> None:
+    async def mower_override(self, duration_hours: float = 3.0) -> ResponseResult:
         """
         Force the mower to run for the specified duration in hours.
         """
         if duration_hours <= 0:
             raise ValueError("Duration must be greater than 0")
 
-        result = await self.mower_resume_schedule()
-        if result is not ResponseResult.OK:
-            raise RuntimeError(f"SetMode returned {result.name}")
+        async with self.lock:
+            result, _ = await self.command_response_locked(
+                "ClearOverride", warn_on_error=False
+            )
+            if result is not ResponseResult.OK:
+                logger.debug(
+                    "ClearOverride returned %s while starting manual mowing",
+                    result.name,
+                )
 
-        # Set the duration of operation:
-        await self.command("SetOverrideMow", duration=int(duration_hours * 3600))
+            result, _ = await self.command_response_locked(
+                "SetMode", mode=ModeOfOperation.AUTO
+            )
+            if result is not ResponseResult.OK:
+                return result
 
-        # Request trigger to start, the response validation is expected to fail
-        await self.command("StartTrigger")
+            result, _ = await self.command_response_locked(
+                "SetOverrideMow", duration=int(duration_hours * 3600)
+            )
+            if result is not ResponseResult.OK:
+                return result
+
+            return await self._start_trigger_locked(
+                "manual mowing",
+                (MowerActivity.GOING_OUT, MowerActivity.MOWING),
+            )
 
     async def mower_pause(self):
         await self.command("Pause")
@@ -347,6 +364,15 @@ class Mower(BLEClient):
         a manual mowing override.
         """
         async with self.lock:
+            result, _ = await self.command_response_locked("Pause", warn_on_error=False)
+            if result is ResponseResult.OK:
+                await asyncio.sleep(1)
+            elif result not in (
+                ResponseResult.UNKNOWN_ERROR,
+                ResponseResult.NOT_ALLOWED,
+            ):
+                logger.debug("Pause returned %s while starting SpotCut", result.name)
+
             result, _ = await self.command_response_locked(
                 "ClearOverride", warn_on_error=False
             )
@@ -374,28 +400,55 @@ class Mower(BLEClient):
             result, _ = await self.command_response_locked(
                 "StartTrigger", warn_on_error=False
             )
-            if result is ResponseResult.OK:
-                return result
-
-            if result is ResponseResult.UNKNOWN_ERROR:
-                await asyncio.sleep(2)
-                _, state = await self.command_response_locked(
-                    "GetState", warn_on_error=False
+            if result is not ResponseResult.OK:
+                return await self._start_trigger_result_locked(
+                    result,
+                    "SpotCut",
+                    (MowerActivity.MOWING,),
                 )
-                _, activity = await self.command_response_locked(
-                    "GetActivity", warn_on_error=False
-                )
-                if (
-                    state == MowerState.IN_OPERATION
-                    and activity == MowerActivity.MOWING
-                ):
-                    logger.debug(
-                        "StartTrigger returned UNKNOWN_ERROR but mower is mowing"
-                    )
-                    return ResponseResult.OK
 
-            logger.warning("StartTrigger returned %s", result.name)
             return result
+
+    async def _start_trigger_locked(
+        self, context: str, accepted_activities: tuple[MowerActivity, ...]
+    ) -> ResponseResult:
+        """Send StartTrigger and tolerate app-observed successful UNKNOWN_ERROR."""
+        result, _ = await self.command_response_locked(
+            "StartTrigger", warn_on_error=False
+        )
+        if result is ResponseResult.OK:
+            return result
+
+        return await self._start_trigger_result_locked(
+            result,
+            context,
+            accepted_activities,
+        )
+
+    async def _start_trigger_result_locked(
+        self,
+        result: ResponseResult,
+        context: str,
+        accepted_activities: tuple[MowerActivity, ...],
+    ) -> ResponseResult:
+        """Validate a StartTrigger result against the actual mower state."""
+        if result is ResponseResult.UNKNOWN_ERROR:
+            await asyncio.sleep(2)
+            _, state = await self.command_response_locked(
+                "GetState", warn_on_error=False
+            )
+            _, activity = await self.command_response_locked(
+                "GetActivity", warn_on_error=False
+            )
+            if state == MowerState.IN_OPERATION and activity in accepted_activities:
+                logger.debug(
+                    "StartTrigger returned UNKNOWN_ERROR but mower accepted %s",
+                    context,
+                )
+                return ResponseResult.OK
+
+        logger.warning("StartTrigger returned %s while starting %s", result.name, context)
+        return result
 
     async def mower_stop_spot_cut(self) -> ResponseResult:
         """Stop SpotCut by pausing the mower, matching the app-observed flow."""
