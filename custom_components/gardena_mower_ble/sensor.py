@@ -47,6 +47,11 @@ DESCRIPTIONS = (
         icon="mdi:state-machine",
     ),
     SensorEntityDescription(
+        key="mode",
+        name="Mode",
+        icon="mdi:cog-clockwise",
+    ),
+    SensorEntityDescription(
         key="next_start_time",
         name="Next Start Time",
         device_class=SensorDeviceClass.TIMESTAMP,
