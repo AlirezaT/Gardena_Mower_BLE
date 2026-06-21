@@ -39,6 +39,7 @@ class Mower(BLEClient):
         super().__init__(channel_id, address, pin)
         self.keep_alive_event = asyncio.Event()
         self.task: asyncio.Task | None = None
+        self._connect_lock = asyncio.Lock()
 
     async def connect(self, device) -> ResponseResult:
         """
@@ -46,12 +47,25 @@ class Mower(BLEClient):
 
         Returns a ResponseResult
         """
-        status = await super().connect(device)
-        if status == ResponseResult.OK:
-            self.keep_alive_event.clear()
-            if self.task is None or self.task.done():
-                self.task = asyncio.create_task(self._keep_alive())
-        return status
+        if self.is_connected():
+            self._ensure_keep_alive()
+            return ResponseResult.OK
+
+        async with self._connect_lock:
+            if self.is_connected():
+                self._ensure_keep_alive()
+                return ResponseResult.OK
+
+            status = await super().connect(device)
+            if status == ResponseResult.OK:
+                self._ensure_keep_alive()
+            return status
+
+    def _ensure_keep_alive(self) -> None:
+        """Start one keep-alive task for the active mower connection."""
+        self.keep_alive_event.clear()
+        if self.task is None or self.task.done():
+            self.task = asyncio.create_task(self._keep_alive())
 
     async def disconnect(self):
         """

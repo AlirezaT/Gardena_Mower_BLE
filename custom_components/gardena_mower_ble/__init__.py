@@ -57,6 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
 
     await close_stale_connections_by_address(address)
 
+    setup_complete = False
     LOGGER.debug("connecting to %s with channel ID %s", address, str(channel_id))
     try:
         device = bluetooth.async_ble_device_from_address(
@@ -71,21 +72,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
             raise ConfigEntryNotReady(
                 f"Unable to connect to device {address}, mower returned {response_result}"
             )
+        LOGGER.debug("connected and paired")
+
+        model = await mower.get_model()
+        LOGGER.debug("Connected to Automower: %s", model)
+
+        coordinator = GardenaCoordinator(hass, entry, mower, address, channel_id, model)
+
+        await coordinator.async_config_entry_first_refresh()
+        entry.runtime_data = coordinator
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        setup_complete = True
     except (TimeoutError, BleakError) as exception:
         raise ConfigEntryNotReady(
             f"Unable to connect to device {address} due to {exception}"
         ) from exception
-
-    LOGGER.debug("connected and paired")
-
-    model = await mower.get_model()
-    LOGGER.debug("Connected to Automower: %s", model)
-
-    coordinator = GardenaCoordinator(hass, entry, mower, address, channel_id, model)
-
-    await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = coordinator
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    finally:
+        if not setup_complete and mower.is_connected():
+            await mower.disconnect()
 
     return True
 
