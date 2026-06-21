@@ -132,16 +132,22 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @staticmethod
     def _update_starting_point_charging_station_share(data: dict[str, Any]) -> None:
         """Calculate the charging station share from starting point shares."""
-        proportions = []
+        proportion_total = 0
         for starting_point_id in range(1, 4):
+            enabled = data.get(f"StartingPoint{starting_point_id}Enabled")
+            if enabled is None:
+                return
+            if not bool(enabled):
+                continue
+
             value = data.get(f"StartingPoint{starting_point_id}Proportion")
             if value is None:
                 return
-            proportions.append(int(value))
+            proportion_total += int(value)
 
         data["StartingPointChargingStationProportion"] = max(
             0,
-            100 - sum(proportions),
+            100 - proportion_total,
         )
 
     def has_recent_data(self) -> bool:
@@ -449,7 +455,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             if poll_settings and self._starting_points_supported:
                 try:
-                    starting_point_proportions = []
+                    starting_points_read = 0
+                    enabled_starting_point_proportions = []
                     for starting_point_id in range(1, 4):
                         result, starting_point = await self.mower.command_response(
                             "GetStartingPoint",
@@ -465,22 +472,25 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             break
 
                         prefix = f"StartingPoint{starting_point_id}"
-                        data[f"{prefix}Enabled"] = bool(starting_point["enabled"])
+                        enabled = bool(starting_point["enabled"])
+                        data[f"{prefix}Enabled"] = enabled
                         data[f"{prefix}Proportion"] = starting_point["proportion"]
                         data[f"{prefix}Wire"] = starting_point["wire"]
                         data[f"{prefix}Distance"] = starting_point["distance"]
                         data[f"{prefix}CorridorCut"] = bool(
                             starting_point["corridorCut"]
                         )
-                        starting_point_proportions.append(
-                            int(starting_point["proportion"])
-                        )
+                        if enabled:
+                            enabled_starting_point_proportions.append(
+                                int(starting_point["proportion"])
+                            )
+                        starting_points_read += 1
                         LOGGER.debug("%s: %s", prefix, starting_point)
 
-                    if starting_point_proportions:
+                    if starting_points_read:
                         data["StartingPointChargingStationProportion"] = max(
                             0,
-                            100 - sum(starting_point_proportions),
+                            100 - sum(enabled_starting_point_proportions),
                         )
                     else:
                         self._starting_points_supported = False

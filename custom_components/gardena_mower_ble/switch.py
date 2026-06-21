@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 
 from homeassistant.components import bluetooth
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
@@ -12,7 +13,13 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.protocol import ModeOfOperation, ResponseResult
+from .automower_ble.protocol import (
+    ModeOfOperation,
+    MowerActivity,
+    MowerState,
+    OverrideAction,
+    ResponseResult,
+)
 from .entity import GardenaMowerBleDescriptorEntity
 
 ALWAYS_CREATE_SWITCHES = {
@@ -148,7 +155,13 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
         updates = {description.key: state_enabled}
         if description.key == "EcoMode":
             updates["ChargingStationLoopSignalGeneration"] = not state_enabled
-        self.coordinator.update_cached_data(updates)
+        self.coordinator.update_cached_data(
+            updates,
+            recalculate_starting_point_share=description.key.startswith(
+                "StartingPoint"
+            )
+            and description.key.endswith("Enabled"),
+        )
         self.coordinator.schedule_settings_refresh()
 
 
@@ -156,6 +169,14 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
     """Representation of the SpotCut switch."""
 
     entity_description: SwitchEntityDescription
+    _spot_cut_restore_state: dict | None
+
+    def __init__(
+        self, coordinator, description: SwitchEntityDescription
+    ) -> None:
+        """Initialize the SpotCut switch."""
+        super().__init__(coordinator, description)
+        self._spot_cut_restore_state = None
 
     @property
     def is_on(self) -> bool | None:
@@ -168,6 +189,9 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
     async def async_turn_on(self, **kwargs) -> None:
         """Start SpotCut."""
         await self._async_ensure_connected()
+        if not self.is_on:
+            self._spot_cut_restore_state = self._capture_restore_state()
+
         result = await self.coordinator.mower.mower_spot_cut()
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Spot Cut failed: {result.name}")
@@ -182,8 +206,85 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Stop Spot Cut failed: {result.name}")
 
-        self.coordinator.update_cached_data({"spotCutting": 0})
+        updates = {"spotCutting": 0}
+        updates.update(await self._async_restore_previous_state())
+        self._spot_cut_restore_state = None
+        self.coordinator.update_cached_data(updates)
         self.coordinator.schedule_action_refresh()
+
+    def _capture_restore_state(self) -> dict:
+        """Capture enough mower state to restore after manual SpotCut stop."""
+        data = self.coordinator.data or {}
+        return {
+            "activity": data.get("activity"),
+            "state": data.get("state"),
+            "mode": data.get("mode"),
+            "override": data.get("override"),
+            "permanentPark": data.get("permanentPark"),
+        }
+
+    async def _async_restore_previous_state(self) -> dict:
+        """Best-effort restore of the mower state that existed before SpotCut."""
+        restore_state = self._spot_cut_restore_state
+        if not restore_state:
+            return {}
+
+        activity = restore_state.get("activity")
+        mower_state = restore_state.get("state")
+        mode = restore_state.get("mode")
+        override = restore_state.get("override") or {}
+
+        if restore_state.get("permanentPark") or mode is ModeOfOperation.HOME:
+            result = await self.coordinator.mower.mower_park_permanently()
+            if result is not ResponseResult.OK:
+                raise HomeAssistantError(f"Restore previous state failed: {result.name}")
+            return {
+                "activity": MowerActivity.GOING_HOME,
+                "state": MowerState.IN_OPERATION,
+                "mode": ModeOfOperation.HOME,
+                "permanentPark": True,
+            }
+
+        if mower_state is MowerState.PAUSED or activity is MowerActivity.STOPPED_IN_GARDEN:
+            return {"state": MowerState.PAUSED}
+
+        if activity in (
+            MowerActivity.MOWING,
+            MowerActivity.GOING_OUT,
+        ) or override.get("action") is OverrideAction.FORCEDMOW:
+            result = await self.coordinator.mower.mower_override(
+                self._restore_duration_hours(override)
+            )
+            if result is not ResponseResult.OK:
+                raise HomeAssistantError(f"Restore previous state failed: {result.name}")
+            return {
+                "activity": MowerActivity.MOWING,
+                "state": MowerState.IN_OPERATION,
+                "mode": ModeOfOperation.AUTO,
+                "permanentPark": False,
+            }
+
+        result = await self.coordinator.mower.mower_park()
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Restore previous state failed: {result.name}")
+        return {
+            "activity": MowerActivity.GOING_HOME,
+            "state": MowerState.IN_OPERATION,
+        }
+
+    def _restore_duration_hours(self, override: dict) -> float:
+        """Return remaining manual mowing duration from a previous override."""
+        duration = override.get("duration")
+        if not isinstance(duration, int) or duration <= 0:
+            return self.coordinator.manual_mowing_duration_hours
+
+        start_time = override.get("startTime")
+        if isinstance(start_time, int) and start_time > 0:
+            remaining = (start_time + duration) - int(time.time())
+            if remaining > 0:
+                duration = remaining
+
+        return max(1 / 60, duration / 3600)
 
     async def _async_ensure_connected(self) -> None:
         """Connect to the mower if needed."""
