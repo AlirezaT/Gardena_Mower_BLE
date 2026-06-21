@@ -146,8 +146,7 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
         LOGGER.debug("Setting %s to %s", description.key, value)
         if description.key == "ManualMowingDuration":
             self.coordinator.manual_mowing_duration_hours = value
-            self.coordinator.data[description.key] = value
-            self.async_write_ha_state()
+            self.coordinator.update_cached_data({description.key: value})
             return
 
         if (
@@ -182,6 +181,9 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
             **kwargs,
         )
 
-        self.coordinator.data[description.key] = native_value
-        self.async_write_ha_state()
+        self.coordinator.update_cached_data(
+            {description.key: native_value},
+            recalculate_starting_point_share=description.value_parameter
+            == "proportion",
+        )
         self.coordinator.schedule_settings_refresh()

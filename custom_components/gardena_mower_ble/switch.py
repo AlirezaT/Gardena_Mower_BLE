@@ -12,7 +12,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.protocol import ResponseResult
+from .automower_ble.protocol import ModeOfOperation, ResponseResult
 from .entity import GardenaMowerBleDescriptorEntity
 
 ALWAYS_CREATE_SWITCHES = {
@@ -145,12 +145,10 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
             **request,
         )
 
-        self.coordinator.data[description.key] = state_enabled
+        updates = {description.key: state_enabled}
         if description.key == "EcoMode":
-            self.coordinator.data["ChargingStationLoopSignalGeneration"] = (
-                not state_enabled
-            )
-        self.async_write_ha_state()
+            updates["ChargingStationLoopSignalGeneration"] = not state_enabled
+        self.coordinator.update_cached_data(updates)
         self.coordinator.schedule_settings_refresh()
 
 
@@ -174,7 +172,7 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Spot Cut failed: {result.name}")
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data({"spotCutting": 3})
         self.coordinator.schedule_action_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -184,7 +182,7 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Stop Spot Cut failed: {result.name}")
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data({"spotCutting": 0})
         self.coordinator.schedule_action_refresh()
 
     async def _async_ensure_connected(self) -> None:
@@ -221,7 +219,12 @@ class GardenaMowerBlePermanentParkSwitch(GardenaMowerBleDescriptorEntity, Switch
                 f"{self.entity_description.name} failed: {result.name}"
             )
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data(
+            {
+                "permanentPark": True,
+                "mode": ModeOfOperation.HOME,
+            }
+        )
         self.coordinator.schedule_action_refresh()
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -233,7 +236,12 @@ class GardenaMowerBlePermanentParkSwitch(GardenaMowerBleDescriptorEntity, Switch
                 f"{self.entity_description.name} failed: {result.name}"
             )
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data(
+            {
+                "permanentPark": False,
+                "mode": ModeOfOperation.AUTO,
+            }
+        )
         self.coordinator.schedule_action_refresh()
 
     async def _async_ensure_connected(self) -> None:

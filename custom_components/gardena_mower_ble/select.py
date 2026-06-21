@@ -120,6 +120,5 @@ class GardenaMowerBleSelect(GardenaMowerBleDescriptorEntity, SelectEntity):
             **request,
         )
 
-        self.coordinator.data[description.key] = option_id
-        self.async_write_ha_state()
+        self.coordinator.update_cached_data({description.key: option_id})
         self.coordinator.schedule_settings_refresh()

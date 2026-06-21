@@ -26,8 +26,8 @@ REALTIME_POLL_INTERVAL = timedelta(minutes=1)
 SETTINGS_POLL_INTERVAL = timedelta(minutes=2)
 DIAGNOSTIC_POLL_INTERVAL = timedelta(minutes=5)
 RECENT_DATA_TIMEOUT = timedelta(minutes=5)
-ACTION_REFRESH_DELAY = 4
-SETTINGS_REFRESH_DELAY = 4
+ACTION_REFRESH_DELAY = 2
+SETTINGS_REFRESH_DELAY = 2
 DEFAULT_MANUAL_MOWING_DURATION_HOURS = 3.0
 
 
@@ -78,6 +78,35 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
         self._delayed_refresh_cancel = None
         self._delayed_settings_refresh_cancel = None
+
+    def update_cached_data(
+        self,
+        updates: dict[str, Any],
+        *,
+        recalculate_starting_point_share: bool = False,
+    ) -> None:
+        """Update cached coordinator data and notify entities immediately."""
+        data = dict(self.data or self._last_data)
+        data.update(updates)
+        if recalculate_starting_point_share:
+            self._update_starting_point_charging_station_share(data)
+        self._last_data = data
+        self.async_set_updated_data(data)
+
+    @staticmethod
+    def _update_starting_point_charging_station_share(data: dict[str, Any]) -> None:
+        """Calculate the charging station share from starting point shares."""
+        proportions = []
+        for starting_point_id in range(1, 4):
+            value = data.get(f"StartingPoint{starting_point_id}Proportion")
+            if value is None:
+                return
+            proportions.append(int(value))
+
+        data["StartingPointChargingStationProportion"] = max(
+            0,
+            100 - sum(proportions),
+        )
 
     def has_recent_data(self) -> bool:
         """Return true when the coordinator has recent cached mower data."""
@@ -412,12 +441,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         LOGGER.debug("%s: %s", prefix, starting_point)
 
                     if starting_point_proportions:
-                        data.setdefault(
-                            "StartingPointChargingStationProportion",
-                            max(
-                                0,
-                                100 - sum(starting_point_proportions),
-                            ),
+                        data["StartingPointChargingStationProportion"] = max(
+                            0,
+                            100 - sum(starting_point_proportions),
                         )
                     else:
                         self._starting_points_supported = False

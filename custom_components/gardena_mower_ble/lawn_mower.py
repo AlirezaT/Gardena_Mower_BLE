@@ -2,7 +2,12 @@
 
 import asyncio
 
-from .automower_ble.protocol import MowerActivity, MowerState, ResponseResult
+from .automower_ble.protocol import (
+    ModeOfOperation,
+    MowerActivity,
+    MowerState,
+    ResponseResult,
+)
 
 from homeassistant.components import bluetooth
 from homeassistant.components.lawn_mower import (
@@ -118,7 +123,14 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         await self.coordinator.mower.mower_override(
             self.coordinator.manual_mowing_duration_hours
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data(
+            {
+                "activity": MowerActivity.MOWING,
+                "state": MowerState.IN_OPERATION,
+                "mode": ModeOfOperation.AUTO,
+                "permanentPark": False,
+            }
+        )
         self.coordinator.schedule_action_refresh()
 
         self._attr_activity = self._get_activity()
@@ -142,7 +154,12 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         if result is not ResponseResult.OK:
             raise HomeAssistantError(f"Dock failed: {result.name}")
 
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data(
+            {
+                "activity": MowerActivity.GOING_HOME,
+                "state": MowerState.IN_OPERATION,
+            }
+        )
         self.coordinator.schedule_action_refresh()
 
         self._attr_activity = self._get_activity()
@@ -160,7 +177,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
                 return
 
         await self.coordinator.mower.mower_pause()
-        await self.coordinator.async_request_refresh()
+        self.coordinator.update_cached_data({"state": MowerState.PAUSED})
         self.coordinator.schedule_action_refresh()
 
         self._attr_activity = self._get_activity()
