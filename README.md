@@ -115,27 +115,40 @@ blueprints/automation/gardena_smart_mowing.yaml
 ```
 
 The blueprint calculates mowing need from lawn surface and mower capacity, then
-starts the mower only when the weather forecast and optional wetness blockers say
-the grass should be dry enough. It updates the integration's `Manual Mowing
-Duration` number before starting the mower, so the same blueprint can adjust
-session length through the season.
+adjusts that baseline with weather, season, lawn type, grass type, recent rain,
+temperature, humidity, and lawn exposure. It starts the mower only when the
+weather forecast, dew model, and optional wetness blockers say the grass should
+be dry enough. It updates the integration's `Manual Mowing Duration` number
+before starting the mower, so the same blueprint can adjust session length
+through the season.
 
 It acts as a dynamic Home Assistant schedule instead of writing fixed onboard
 mower schedule entries, which lets it react to changing rain forecasts.
 
+The newer algorithm works like a small mowing budget:
+
+- dry/warm/growing weather adds mowing debt
+- manual and automatic mowing subtract real cutting time from that debt
+- rainy, humid, dewy, or shaded conditions delay mowing until a dry window
+- mower recharge pauses are treated as part of the same run until a grace period
+  expires
+
 Inputs include:
 
-- weather entity with hourly forecast
+- weather entity with hourly forecast; rainy-days reporting also uses the
+  hourly forecast, so no separate daily forecast support is required
 - lawn mower entity
 - manual mowing duration number entity
 - lawn area in square meters
 - mower capacity in square meters per hour
-- weekly coverage multiplier
+- baseline weekly coverage multiplier
+- lawn type, grass climate type, growth adjustment, and lawn exposure
 - minimum and maximum sessions per week
 - minimum and maximum session length
 - allowed mowing time window, either fixed or relative to sunrise/sunset
 - rain forecast thresholds
-- drying delay after rain
+- rainy-days report lookahead
+- drying delay after rain and morning dew drying time
 - optional binary sensors/helpers that block mowing, such as Smart Irrigation,
   rain, soil moisture, or leaf wetness sensors
 - optional total cutting time sensor, used to measure real cutting duration
@@ -144,17 +157,23 @@ Inputs include:
 Create these helpers before using the blueprint:
 
 - `input_datetime` for last rain/wetness detection
-- `input_datetime` for last mower start
+- `input_datetime` for last completed mow
 - `input_datetime` for the current mowing start
-- `input_text` for the weekly mowing run log
+- `input_text` for the compact fallback weekly mowing run log
 
 Optional helpers:
 
 - `input_number` for the cutting-time value at the start of the current smart
   mowing run
+- `input_number` for accumulated mowing debt
+- `input_datetime` for when mowing debt was last updated
 - `input_datetime` for the next expected smart mowing start
 - `input_text` for the estimated smart mowing schedule for the coming week
 - `input_text` for the last schedule summary that was sent as a notification
+- local `calendar` entity for full completed-run history and weekly reports
+- `input_datetime` for last mower cleaning
+- `input_datetime` for last blade change
+- `input_number` for blade/cutting usage at the last blade change
 
 ### Manual Irrigation Button
 
@@ -180,6 +199,16 @@ blueprint's **Last rain helper**. After pressing the button, the blueprint will
 treat manual irrigation like rain and wait for the configured drying time before
 mowing again.
 
+For best weekly reports, create a Home Assistant **Local calendar** and select
+it as the blueprint's mowing history calendar. `input_text` helpers are limited
+to 255 characters in Home Assistant, so the calendar is the reliable place to
+store every completed mowing run with start, end, and duration.
+
+If you configure the maintenance helpers, update the last cleaning helper after
+cleaning the mower, and update both the last blade change helper and blade-time
+helper after changing blades. The blueprint will then remind you based on days,
+weeks, and optional cutting/blade usage time.
+
 The blueprint can also send persistent notifications and, optionally, a mobile
 app notification service such as `notify.mobile_app_phone_name`.
 
@@ -190,12 +219,17 @@ Monitoring features:
 - alert if a dock command after wet weather does not stop mowing
 - alert if wet weather blocks mowing for too many days
 - alert if a mowing run ends much earlier than planned
+- alert if a run never resumes or completes after the recharge grace period
+- count manually started mowing runs toward the smart schedule
+- daily status feedback explaining why mowing is ready or blocked
+- cleaning reminder after wet/humid mowing
+- routine cleaning and blade-change reminders when helpers are configured
 - store the next expected mowing start and an estimated weekly plan, respecting the mowing window, in optional
   helpers
 - send a daily schedule-changed notification when the estimated smart mowing
   plan changes
 - send a weekly persistent report with run day, start time, end time, and
-  duration
+  duration from the mowing history calendar when configured
 
 Import URL:
 
