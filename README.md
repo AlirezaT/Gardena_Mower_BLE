@@ -175,8 +175,8 @@ Optional helpers:
 - `input_datetime` for last mower cleaning
 - `input_datetime` for last blade change
 - `input_number` for blade/cutting usage at the last blade change
-- optional `input_button` helpers for "manual watering", "mower cleaned", and
-  "blades changed"
+- optional `input_button` helpers for "refresh smart mowing schedule", "manual
+  watering", "mower cleaned", and "blades changed"
 
 ### Manual Irrigation Button
 
@@ -198,12 +198,15 @@ helper after changing blades. The blueprint will then remind you based on days,
 weeks, and optional cutting/blade usage time.
 
 For dashboard buttons, create input button helpers and select them in the
-blueprint's optional manual watering, cleaning reset, and blade-change reset
-inputs. Add the helpers to a dashboard entities card or button card:
+blueprint's optional schedule refresh, manual watering, cleaning reset, and
+blade-change reset inputs. Add the helpers to a dashboard entities card or
+button card:
 
 ```yaml
 type: entities
 entities:
+  - entity: input_button.smart_mowing_refresh
+    name: Refresh mowing plan
   - entity: input_button.lawn_manually_watered
     name: Lawn watered
   - entity: input_button.mower_cleaned
@@ -302,7 +305,7 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
 | Total Cutting Time | Lifetime cutting time. |
 | Total Charging Time | Lifetime charging time. |
 | Total Searching Time | Lifetime searching time. |
-| Cutting Blade Usage Time | Blade usage time. |
+| Cutting Blade Usage Time | Blade usage time in hours. |
 | Number Of Collisions | Lifetime collision count. |
 | Number Of Charging Cycles | Lifetime charging cycle count. |
 

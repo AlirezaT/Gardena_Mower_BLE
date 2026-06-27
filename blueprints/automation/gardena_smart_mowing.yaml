@@ -82,6 +82,17 @@ blueprint:
       selector:
         entity:
           domain: input_text
+    schedule_refresh_buttons:
+      name: Optional schedule refresh button
+      description: >-
+        Optional input_button helper shown on a dashboard. Press it to
+        recalculate next expected mowing and the compact weekly plan without
+        starting the mower.
+      default: []
+      selector:
+        entity:
+          domain: input_button
+          multiple: true
     mowing_history_calendar:
       name: Optional mowing history calendar
       description: >-
@@ -672,6 +683,9 @@ trigger:
     id: daily_schedule_report
     at: !input daily_schedule_notification_time
   - platform: state
+    id: schedule_refresh
+    entity_id: !input schedule_refresh_buttons
+  - platform: state
     id: manual_watering
     entity_id: !input manual_watering_buttons
   - platform: state
@@ -692,6 +706,7 @@ variables:
   current_mow_cutting_start_helper: !input current_mow_cutting_start_helper
   next_expected_start_helper: !input next_expected_start_helper
   weekly_schedule_helper: !input weekly_schedule_helper
+  schedule_refresh_buttons: !input schedule_refresh_buttons
   mowing_history_calendar: !input mowing_history_calendar
   last_schedule_notification_helper: !input last_schedule_notification_helper
   weekly_run_log_helper: !input weekly_run_log_helper
@@ -1491,7 +1506,32 @@ action:
         {% set dew_ts = dew_dry_ts | float(0) if dew_active | bool else 0 %}
         {% set debt_per_hour = daily_mowing_minutes_needed | float(0) / 24 %}
         {% set debt_missing = debt_ready_threshold_minutes | float(0) - updated_mowing_debt_minutes | float(0) %}
-        {% set debt_ts = now_ts + (debt_missing / debt_per_hour * 3600) if debt_missing > 0 and debt_per_hour > 0 else 0 %}
+        {% if debt_missing > 0 and debt_per_hour > 0 %}
+          {% set excluded = excluded_mowing_weekdays
+            if excluded_mowing_weekdays is iterable and excluded_mowing_weekdays is not string
+            else [excluded_mowing_weekdays] %}
+          {% set debt_window = namespace(ts=0, remaining=debt_missing) %}
+          {% for offset in range(0, 22) %}
+            {% set segment_start = [now_ts, day_start + (offset * 86400)] | max %}
+            {% set segment_end = day_start + ((offset + 1) * 86400) %}
+            {% set label = segment_start | timestamp_custom('%A', true) %}
+            {% if debt_window.ts == 0
+                  and segment_end > segment_start
+                  and excluded | count < 7
+                  and label not in excluded %}
+              {% set hours = (segment_end - segment_start) / 3600 %}
+              {% set gained = hours * debt_per_hour %}
+              {% if debt_window.remaining <= gained %}
+                {% set debt_window.ts = segment_start + (debt_window.remaining / debt_per_hour * 3600) %}
+              {% else %}
+                {% set debt_window.remaining = debt_window.remaining - gained %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% set debt_ts = debt_window.ts if debt_window.ts > 0 else now_ts + (debt_missing / debt_per_hour * 3600) %}
+        {% else %}
+          {% set debt_ts = 0 %}
+        {% endif %}
         {% set target_ts = [now_ts, dry_ts, gap_ts, forecast_ts, wet_ts, dew_ts, debt_ts] | max %}
         {% set day_offset = (((target_ts - day_start) // 86400) | int) * 86400 %}
         {% set start = base_start + day_offset %}
@@ -1538,10 +1578,10 @@ action:
         {% elif start_ts is none %}
           No schedule estimate
         {% else %}
-          {% set shown = [sessions, 7] | min %}
+          {% set shown = [[sessions - 1, 0] | max, 6] | min %}
           {% set search_count = [[sessions * 3, shown] | max, 21] | min %}
           {% set ns = namespace(times=[], keys=[]) %}
-          {% for index in range(search_count) %}
+          {% for index in range(1, search_count + 1) %}
             {% set raw_ts = start_ts + (index * gap) %}
             {% set day_offset = (((raw_ts - day_start) // 86400) | int) * 86400 %}
             {% set start = base_start + day_offset %}
@@ -1583,7 +1623,7 @@ action:
           Next {{ start_ts | timestamp_custom('%a %H:%M', true) }},
           {{ duration }}m; debt {{ updated_mowing_debt_minutes | int(0) }}m,
           growth x{{ smart_growth_factor | float(1) | round(2) }};
-          {{ ns.times | join(', ') }}{% if sessions > (ns.times | count) %}, +{{ sessions - (ns.times | count) }} more{% endif %}
+          {% if ns.times | count > 0 %}later {{ ns.times | join(', ') }}{% else %}no later slots{% endif %}{% if sessions > ((ns.times | count) + 1) %}, +{{ sessions - ((ns.times | count) + 1) }} more{% endif %}
         {% endif %}
 
   - choose:
@@ -1706,6 +1746,19 @@ action:
             data:
               entity_id: "{{ weekly_schedule_helper }}"
               value: "{{ estimated_weekly_schedule[:255] }}"
+
+  - choose:
+      - conditions: "{{ trigger.id == 'schedule_refresh' }}"
+        sequence:
+          - choose:
+              - conditions: "{{ persistent_notifications | bool }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      title: Smart mowing schedule refreshed
+                      message: "{{ estimated_weekly_schedule[:255] }}"
+                      notification_id: smart_mowing_schedule_refreshed
+          - stop: Smart mowing schedule refreshed.
 
   - choose:
       - conditions: "{{ trigger.id == 'daily_schedule_report' }}"

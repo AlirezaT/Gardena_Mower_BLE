@@ -351,8 +351,7 @@ DESCRIPTIONS = (
     SensorEntityDescription(
         key="cuttingBladeUsageTime",
         name="Cutting Blade Usage Time",
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        suggested_unit_of_measurement=UnitOfTime.HOURS,
+        native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,
         state_class=SensorStateClass.TOTAL_INCREASING,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -417,6 +416,9 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
 
         if key == "last_message":
             return _format_message(value)
+
+        if key == "cuttingBladeUsageTime":
+            return round(value / 3600, 2)
 
         # Convert enum values like MowerActivity.PARKED to "parked"
         if hasattr(value, "name"):
