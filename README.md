@@ -145,6 +145,7 @@ Inputs include:
 - lawn type, grass climate type, growth adjustment, and lawn exposure
 - minimum and maximum sessions per week
 - minimum and maximum session length
+- excluded mowing weekdays; weekly mowing need is spread over the remaining days
 - allowed mowing time window, either fixed or relative to sunrise/sunset
 - rain forecast thresholds
 - rainy-days report lookahead
@@ -174,6 +175,7 @@ Optional helpers:
 - `input_datetime` for last mower cleaning
 - `input_datetime` for last blade change
 - `input_number` for blade/cutting usage at the last blade change
+- optional `input_button` helpers for "mower cleaned" and "blades changed"
 
 ### Manual Irrigation Button
 
@@ -208,6 +210,19 @@ If you configure the maintenance helpers, update the last cleaning helper after
 cleaning the mower, and update both the last blade change helper and blade-time
 helper after changing blades. The blueprint will then remind you based on days,
 weeks, and optional cutting/blade usage time.
+
+For dashboard reset buttons, create input button helpers and select them in the
+blueprint's optional cleaning/blade-change reset inputs. Add the helpers to a
+dashboard entities card or button card:
+
+```yaml
+type: entities
+entities:
+  - entity: input_button.mower_cleaned
+    name: Mower cleaned
+  - entity: input_button.mower_blades_changed
+    name: Blades changed
+```
 
 The blueprint can also send persistent notifications and, optionally, a mobile
 app notification service such as `notify.mobile_app_phone_name`.
