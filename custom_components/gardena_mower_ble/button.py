@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from homeassistant.components import bluetooth
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
@@ -21,6 +22,8 @@ class GardenaMowerBleCommandButtonEntityDescription(ButtonEntityDescription):
     """Description for mower command button entities."""
 
     command: str
+    command_kwargs: dict[str, Any] = field(default_factory=dict)
+    refresh_diagnostics: bool = False
 
 
 DESCRIPTIONS = (
@@ -36,6 +39,15 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.CONFIG,
         icon="mdi:sine-wave",
         command="GenerateLoopSignal",
+        command_kwargs={"signalType": 0},
+    ),
+    GardenaMowerBleCommandButtonEntityDescription(
+        key="reset_cutting_blade_usage_time",
+        name="Reset Cutting Blade Usage Time",
+        entity_category=EntityCategory.CONFIG,
+        icon="mdi:knife",
+        command="ResetCuttingBladeUsageTime",
+        refresh_diagnostics=True,
     ),
 )
 
@@ -66,7 +78,7 @@ class GardenaMowerBleDiagnosticRefreshButton(
 
     async def async_press(self) -> None:
         """Request a one-shot coordinator refresh."""
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.async_refresh_diagnostics()
 
 
 class GardenaMowerBleCommandButton(GardenaMowerBleDescriptorEntity, ButtonEntity):
@@ -79,15 +91,18 @@ class GardenaMowerBleCommandButton(GardenaMowerBleDescriptorEntity, ButtonEntity
         await self._async_ensure_connected()
         result, _ = await self.coordinator.mower.command_response(
             self.entity_description.command,
-            signalType=0,
+            **self.entity_description.command_kwargs,
         )
         if result is not ResponseResult.OK:
             raise HomeAssistantError(
                 f"{self.entity_description.name} failed: {result.name}. "
-                "The mower may need to be parked in the charging station."
+                "The mower may not support this command or may be busy."
             )
 
-        await self.coordinator.async_request_refresh()
+        if self.entity_description.refresh_diagnostics:
+            await self.coordinator.async_refresh_diagnostics()
+        else:
+            await self.coordinator.async_request_refresh()
 
     async def _async_ensure_connected(self) -> None:
         """Connect to the mower if needed."""

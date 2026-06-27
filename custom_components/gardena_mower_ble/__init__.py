@@ -131,7 +131,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         coordinator = await _async_get_service_coordinator(
             hass, call.data.get("config_entry_id")
         )
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh_diagnostics()
 
     if not hass.services.has_service(DOMAIN, SERVICE_DELETE_SCHEDULE):
         hass.services.async_register(

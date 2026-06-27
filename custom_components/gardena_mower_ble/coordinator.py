@@ -219,6 +219,11 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _refresh,
         )
 
+    async def async_refresh_diagnostics(self) -> None:
+        """Request a one-shot refresh that bypasses the diagnostic poll cache."""
+        self._last_diagnostic_poll = None
+        await self.async_request_refresh()
+
     async def _async_find_device(self):
         LOGGER.debug("Trying to reconnect")
         await close_stale_connections_by_address(self.address)

@@ -353,6 +353,11 @@
         "responseType": "uint32",
         "description": "Number of charging cycles completed by the mower."
     },
+    "ResetCuttingBladeUsageTime": {
+        "major": 4726,
+        "minor": 8,
+        "description": "Reset cutting blade usage time."
+    },
     "GetNumberOfMessages": {
         "major": 4730,
         "minor": 0,

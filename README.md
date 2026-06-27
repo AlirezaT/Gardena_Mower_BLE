@@ -261,6 +261,14 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
 | Starting Point 1-3 CorridorCut | Switch | Enable or disable CorridorCut per starting point. |
 | Schedule | Calendar | View, create, update, and delete weekly mowing schedule tasks. |
 
+### Buttons
+
+| Button | Description |
+| --- | --- |
+| Diagnostic Refresh | Force a one-shot mower refresh including diagnostic telemetry. |
+| Generate Loop Signal | Regenerate the charging station loop signal. |
+| Reset Cutting Blade Usage Time | Reset the mower's cutting blade usage timer. |
+
 ## Supported Sensors
 
 ### Status
