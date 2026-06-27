@@ -544,8 +544,10 @@ blueprint:
     blade_usage_time_sensor:
       name: Optional blade usage time sensor
       description: >-
-        Optional lifetime blade/cutting usage sensor for blade replacement
-        reminders. If blank, the total cutting time sensor is used.
+        Optional blade/cutting usage sensor for blade replacement reminders.
+        Use the mower's resettable Cutting Blade Usage Time sensor when
+        available. If blank, the total cutting time sensor is used with the
+        blade time-at-change helper.
       default: ""
       selector:
         entity:
@@ -568,11 +570,22 @@ blueprint:
       name: Optional blade time at change helper
       description: >-
         Optional input_number helper storing blade/cutting usage minutes at the
-        last blade change.
+        last blade change. Use it for lifetime counters. Leave it blank when
+        using a resettable blade usage sensor that is reset to zero at blade
+        change.
       default: ""
       selector:
         entity:
           domain: input_number
+    blade_usage_reset_button:
+      name: Optional mower blade usage reset button
+      description: >-
+        Optional mower button entity to press when the blade-change helper
+        button is used. Select Reset Cutting Blade Usage Time when available.
+      default: ""
+      selector:
+        entity:
+          domain: button
     cleaning_reset_buttons:
       name: Optional cleaning reset button
       description: >-
@@ -754,6 +767,7 @@ variables:
   last_cleaning_helper: !input last_cleaning_helper
   last_blade_change_helper: !input last_blade_change_helper
   blade_time_at_change_helper: !input blade_time_at_change_helper
+  blade_usage_reset_button: !input blade_usage_reset_button
   cleaning_reset_buttons: !input cleaning_reset_buttons
   blade_change_reset_buttons: !input blade_change_reset_buttons
   cleaning_interval_days: !input cleaning_interval_days
@@ -1092,6 +1106,10 @@ variables:
     {% else %}
       {{ value }}
     {% endif %}
+  blade_usage_hours_available: >-
+    {{ use_blade_usage_sensor | bool
+       and (blade_time_at_change_helper | length > 0
+            or blade_usage_time_sensor | length > 0) }}
   last_cleaning_age_days: >-
     {% set ts = as_timestamp(states(last_cleaning_helper), none) %}
     {% if last_cleaning_helper | length == 0 or ts is none %}
@@ -1112,6 +1130,8 @@ variables:
   blade_hours_since_change: >-
     {% if use_blade_usage_sensor | bool and blade_time_at_change_helper | length > 0 %}
       {{ [((blade_usage_minutes | float(0) - states(blade_time_at_change_helper) | float(0)) / 60), 0] | max | round(1) }}
+    {% elif use_blade_usage_sensor | bool and blade_usage_time_sensor | length > 0 %}
+      {{ [(blade_usage_minutes | float(0) / 60), 0] | max | round(1) }}
     {% else %}
       0
     {% endif %}
@@ -1119,7 +1139,7 @@ variables:
     {{ (last_blade_change_helper | length > 0
         and last_blade_change_age_weeks | float(0) >= blade_change_interval_weeks | float(8))
        or (use_blade_usage_sensor | bool
-           and blade_time_at_change_helper | length > 0
+           and blade_usage_hours_available | bool
            and blade_hours_since_change | float(0) >= blade_change_interval_cutting_hours | float(60)) }}
 
 action:
@@ -1186,6 +1206,12 @@ action:
                       entity_id: "{{ last_blade_change_helper }}"
                       datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
           - choose:
+              - conditions: "{{ blade_usage_reset_button | length > 0 }}"
+                sequence:
+                  - action: button.press
+                    target:
+                      entity_id: "{{ blade_usage_reset_button }}"
+          - choose:
               - conditions: >-
                   {{ use_blade_usage_sensor | bool
                      and blade_time_at_change_helper | length > 0 }}
@@ -1193,7 +1219,13 @@ action:
                   - action: input_number.set_value
                     data:
                       entity_id: "{{ blade_time_at_change_helper }}"
-                      value: "{{ blade_usage_minutes | float(0) }}"
+                      value: >-
+                        {% if blade_usage_reset_button | length > 0
+                              and blade_usage_time_sensor | length > 0 %}
+                          0
+                        {% else %}
+                          {{ blade_usage_minutes | float(0) }}
+                        {% endif %}
           - choose:
               - conditions: "{{ persistent_notifications | bool }}"
                 sequence:

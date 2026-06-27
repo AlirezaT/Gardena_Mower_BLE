@@ -174,7 +174,8 @@ Optional helpers:
 - local `calendar` entity for full completed-run history and weekly reports
 - `input_datetime` for last mower cleaning
 - `input_datetime` for last blade change
-- `input_number` for blade/cutting usage at the last blade change
+- `input_number` for blade/cutting usage at the last blade change when using a
+  lifetime counter
 - optional `input_button` helpers for "refresh smart mowing schedule", "manual
   watering", "mower cleaned", and "blades changed"
 
@@ -192,10 +193,19 @@ it as the blueprint's mowing history calendar. `input_text` helpers are limited
 to 255 characters in Home Assistant, so the calendar is the reliable place to
 store every completed mowing run with start, end, and duration.
 
+For smart mowing duration tracking, use the mower's **Total Cutting Time**
+sensor. That counter is lifetime usage and should not be reset. For blade
+maintenance, use **Cutting Blade Usage Time** when available. Because that
+counter can be reset by the mower, you can leave the blade time-at-change helper
+blank and optionally select the integration's **Reset Cutting Blade Usage Time**
+button as the blueprint's mower blade usage reset button. If you use a lifetime
+counter for blade maintenance instead, also configure the blade time-at-change
+helper so the blueprint can calculate the delta since the last blade change.
+
 If you configure the maintenance helpers, update the last cleaning helper after
-cleaning the mower, and update both the last blade change helper and blade-time
-helper after changing blades. The blueprint will then remind you based on days,
-weeks, and optional cutting/blade usage time.
+cleaning the mower and the last blade change helper after changing blades. The
+blueprint will then remind you based on days, weeks, and optional cutting/blade
+usage time.
 
 For dashboard buttons, create input button helpers and select them in the
 blueprint's optional schedule refresh, manual watering, cleaning reset, and
