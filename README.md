@@ -175,31 +175,17 @@ Optional helpers:
 - `input_datetime` for last mower cleaning
 - `input_datetime` for last blade change
 - `input_number` for blade/cutting usage at the last blade change
-- optional `input_button` helpers for "mower cleaned" and "blades changed"
+- optional `input_button` helpers for "manual watering", "mower cleaned", and
+  "blades changed"
 
 ### Manual Irrigation Button
 
-If you manually irrigate the lawn, you can mark the grass as wet by setting the
-same `input_datetime` helper used for last rain/wetness detection. Add this
-script in Home Assistant and expose it as a button on your dashboard:
-
-```yaml
-script:
-  mark_lawn_as_wet:
-    alias: Mark lawn as wet
-    icon: mdi:water
-    sequence:
-      - service: input_datetime.set_datetime
-        target:
-          entity_id: input_datetime.lawn_last_rain
-        data:
-          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
-```
-
-Replace `input_datetime.lawn_last_rain` with the helper you selected as the
-blueprint's **Last rain helper**. After pressing the button, the blueprint will
-treat manual irrigation like rain and wait for the configured drying time before
-mowing again.
+If you manually irrigate the lawn, create an `input_button` helper and select it
+as the blueprint's optional manual watering button. Pressing it updates the same
+last rain/wetness helper used by weather detection, so the blueprint treats
+manual watering like rain and waits for the configured drying time before mowing
+again. If `Dock mower when rain/wetness is detected` is enabled and the mower is
+currently mowing, the button also sends a dock command.
 
 For best weekly reports, create a Home Assistant **Local calendar** and select
 it as the blueprint's mowing history calendar. `input_text` helpers are limited
@@ -211,13 +197,15 @@ cleaning the mower, and update both the last blade change helper and blade-time
 helper after changing blades. The blueprint will then remind you based on days,
 weeks, and optional cutting/blade usage time.
 
-For dashboard reset buttons, create input button helpers and select them in the
-blueprint's optional cleaning/blade-change reset inputs. Add the helpers to a
-dashboard entities card or button card:
+For dashboard buttons, create input button helpers and select them in the
+blueprint's optional manual watering, cleaning reset, and blade-change reset
+inputs. Add the helpers to a dashboard entities card or button card:
 
 ```yaml
 type: entities
 entities:
+  - entity: input_button.lawn_manually_watered
+    name: Lawn watered
   - entity: input_button.mower_cleaned
     name: Mower cleaned
   - entity: input_button.mower_blades_changed

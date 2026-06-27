@@ -135,6 +135,16 @@ blueprint:
       selector:
         entity:
           multiple: true
+    manual_watering_buttons:
+      name: Optional manual watering button
+      description: >-
+        Optional input_button helper shown on a dashboard. Press it after manual
+        watering/irrigation to mark the lawn as wet and restart the drying time.
+      default: []
+      selector:
+        entity:
+          domain: input_button
+          multiple: true
     lawn_area_m2:
       name: Lawn area
       description: Lawn area in square meters.
@@ -662,6 +672,9 @@ trigger:
     id: daily_schedule_report
     at: !input daily_schedule_notification_time
   - platform: state
+    id: manual_watering
+    entity_id: !input manual_watering_buttons
+  - platform: state
     id: cleaning_reset
     entity_id: !input cleaning_reset_buttons
   - platform: state
@@ -685,6 +698,7 @@ variables:
   mowing_debt_helper: !input mowing_debt_helper
   mowing_debt_updated_helper: !input mowing_debt_updated_helper
   wetness_blockers: !input wetness_blockers
+  manual_watering_buttons: !input manual_watering_buttons
   lawn_area_m2: !input lawn_area_m2
   mower_capacity_m2_per_hour: !input mower_capacity_m2_per_hour
   weekly_coverage_multiplier: !input weekly_coverage_multiplier
@@ -1095,6 +1109,39 @@ variables:
 
 action:
   - choose:
+      - conditions: "{{ trigger.id == 'manual_watering' }}"
+        sequence:
+          - action: input_datetime.set_datetime
+            target:
+              entity_id: !input last_rain_helper
+            data:
+              datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+          - choose:
+              - conditions: "{{ persistent_notifications | bool }}"
+                sequence:
+                  - action: persistent_notification.create
+                    data:
+                      title: Smart mowing
+                      message: >-
+                        Manual watering recorded. Mowing will wait for the
+                        configured drying time.
+                      notification_id: smart_mowing_manual_watering
+          - choose:
+              - conditions: >-
+                  {{ phone_notify_service | length > 0 }}
+                sequence:
+                  - action: "{{ phone_notify_service }}"
+                    data:
+                      title: Smart mowing
+                      message: "Manual watering recorded; mowing will wait for the drying time."
+          - choose:
+              - conditions: "{{ park_when_wet | bool and mower_state == 'mowing' }}"
+                sequence:
+                  - action: lawn_mower.dock
+                    target:
+                      entity_id: !input mower_entity
+          - stop: Manual watering recorded.
+
       - conditions: "{{ trigger.id == 'cleaning_reset' }}"
         sequence:
           - choose:
