@@ -163,7 +163,8 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                 channel_id, self.address
             ).probe_gatts(device)
         except (BleakError, TimeoutError) as exception:
-            LOGGER.exception("Failed to probe device (%s): %s", self.address, exception)
+            LOGGER.warning("Failed to probe device (%s): %s", self.address, exception)
+            LOGGER.debug("Full exception", exc_info=True)
             return None
 
         title = manufacturer + " " + device_type
@@ -192,6 +193,15 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
         device = bluetooth.async_ble_device_from_address(
             self.hass, self.address, connectable=True
         )
+        if device is None:
+            try:
+                device = await get_device(self.address)
+            except (BleakError, TimeoutError) as exception:
+                LOGGER.warning(
+                    "Unable to find BLE device for configured address %s: %s",
+                    self.address,
+                    exception,
+                )
 
         title = await self.probe_mower(device)
         if title is None:

@@ -573,6 +573,9 @@ class BLEClient:
 
     async def probe_gatts(self, device):
         logger.info("connecting to device...")
+        if device is None:
+            raise BleakError(f"Could not find device with address '{self.address}'")
+
         client = await establish_connection(
             BleakClientWithServiceCache,
             device,
