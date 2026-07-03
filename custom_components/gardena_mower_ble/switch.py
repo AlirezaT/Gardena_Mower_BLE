@@ -36,6 +36,7 @@ class GardenaMowerBleSwitchEntityDescription(SwitchEntityDescription):
     value_parameter: str
     invert_value: bool = False
     starting_point_id: int | None = None
+    required_key: str | None = None
 
 
 DESCRIPTIONS = (
@@ -56,6 +57,32 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.CONFIG,
         set_command="SetSensorControlEnabled",
         value_parameter="enabled",
+    ),
+    GardenaMowerBleSwitchEntityDescription(
+        key="FrostSensorEnabled",
+        name="Frost Sensor",
+        icon="mdi:snowflake",
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetFrostSensorEnabled",
+        value_parameter="enabled",
+        required_key="FrostSensorWritable",
+    ),
+    GardenaMowerBleSwitchEntityDescription(
+        key="GarageEnabled",
+        name="Avoid Garage",
+        icon="mdi:garage",
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetGarageEnabled",
+        value_parameter="enabled",
+    ),
+    GardenaMowerBleSwitchEntityDescription(
+        key="AntiCollisionRadarEnabled",
+        name="Anti-collision Radar",
+        icon="mdi:radar",
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetAntiCollisionRadarEnabled",
+        value_parameter="enabled",
+        required_key="AntiCollisionRadarAvailable",
     ),
     GardenaMowerBleSwitchEntityDescription(
         key="EcoMode",
@@ -101,6 +128,20 @@ async def async_setup_entry(
     """Set up Gardena Automower BLE switch entities."""
     coordinator = entry.runtime_data
 
+    def should_create(description: SwitchEntityDescription) -> bool:
+        """Return true if this switch is supported by the mower data."""
+        if (
+            description.key not in coordinator.data
+            and description.key not in ALWAYS_CREATE_SWITCHES
+        ):
+            return False
+        if (
+            isinstance(description, GardenaMowerBleSwitchEntityDescription)
+            and description.required_key is not None
+        ):
+            return bool(coordinator.data.get(description.required_key))
+        return True
+
     async_add_entities(
         (
             GardenaMowerBleSpotCutSwitch(coordinator, description)
@@ -110,8 +151,7 @@ async def async_setup_entry(
             else GardenaMowerBleSwitch(coordinator, description)
         )
         for description in DESCRIPTIONS
-        if description.key in coordinator.data
-        or description.key in ALWAYS_CREATE_SWITCHES
+        if should_create(description)
     )
 
 

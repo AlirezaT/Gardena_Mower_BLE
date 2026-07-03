@@ -60,6 +60,12 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:shield-check",
     ),
+    BinarySensorEntityDescription(
+        key="AntiCollisionRadarAvailable",
+        name="Anti-collision Radar Available",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:radar",
+    ),
 )
 
 

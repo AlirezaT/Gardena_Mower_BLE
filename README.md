@@ -262,6 +262,10 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
 | Spot Cut | Switch | Start or stop SpotCut mode. |
 | SensorControl | Switch | Enable or disable automatic mowing time adjustment. |
 | SensorControl Sensitivity | Select | Set SensorControl sensitivity: Low, Medium, or High. |
+| Frost Sensor | Switch | Enable or disable frost-based mowing prevention when the writable command is supported. |
+| Eco Mode | Switch | Disable the charging station loop signal while parked/charging. |
+| Avoid Garage | Switch | Make the mower enter the charging station straight when a garage is installed. |
+| Anti-collision Radar | Switch | Enable or disable the detected Anti-collision Radar accessory when available. |
 | Drive Past Wire | Number | Configure how far the mower drives past the boundary wire. |
 | Charging Station Starting Point Distance | Number | Set the first start point distance from the charging station. |
 | Starting Point 1-3 | Switch | Enable or disable each manual starting point. |
@@ -335,7 +339,10 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
 | Lift | Realtime lift state. |
 | Upside Down | Realtime upside-down state. |
 | In Charging Station | Whether the mower reports being in the charging station. |
-| Frost Sensor Enabled | Frost sensor enabled state. Read-only diagnostic. |
+| Frost Sensor Enabled | Frost sensor enabled state. |
+| Garage Supported | Avoid-garage command support detected from the mower. |
+| ZoneProtect Supported | Legacy ZoneProtect accessory bitmask, when reported by the mower. |
+| Anti-collision Radar Available | Whether the mower reports an available Anti-collision Radar accessory. |
 
 ### Device Information
 
@@ -368,8 +375,6 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
   out, move the adapter closer or use a better Bluetooth adapter.
 - Not every mower model supports every BLE command. Unsupported features are
   disabled at runtime after the mower reports that a command is unavailable.
-- Frost sensor enabled state is exposed as a read-only diagnostic. A safe write
-  command has not been confirmed yet.
 - Some diagnostic values are model and firmware dependent.
 - This is an unofficial community integration and is not affiliated with Gardena
   or Husqvarna.

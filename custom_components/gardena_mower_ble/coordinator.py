@@ -66,6 +66,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._orientation_diagnostics_supported = True
         self._sensor_control_supported = True
         self._frost_sensor_supported = True
+        self._frost_sensor_legacy_supported = True
+        self._garage_setting_supported = True
+        self._anti_collision_radar_supported = True
         self._charging_station_loop_signal_supported = True
         self._supported_accessories_supported = True
         self._unsupported_static_commands: set[str] = set()
@@ -384,22 +387,101 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             if poll_settings and self._frost_sensor_supported:
                 try:
-                    result, frost_sensor_enabled = await self.mower.command_response(
-                        "GetFrostSensorEnabled", warn_on_error=False
-                    )
-                    if result is ResponseResult.OK and frost_sensor_enabled is not None:
-                        data["FrostSensorEnabled"] = frost_sensor_enabled
-                        LOGGER.debug("FrostSensorEnabled: %s", frost_sensor_enabled)
+                    frost_sensor_result: ResponseResult | None = None
+                    frost_sensor_enabled = None
+                    frost_sensor_writable = False
+                    frost_commands = ["GetFrostSensorEnabled"]
+                    if self._frost_sensor_legacy_supported:
+                        frost_commands.append("GetFrostSensorEnabledLegacy")
+
+                    for command_name in frost_commands:
+                        result, value = await self.mower.command_response(
+                            command_name, warn_on_error=False
+                        )
+                        frost_sensor_result = result
+                        if result is ResponseResult.OK and value is not None:
+                            frost_sensor_enabled = value
+                            if command_name == "GetFrostSensorEnabled":
+                                frost_sensor_writable = True
+                                self._frost_sensor_legacy_supported = False
+                            break
+                        if command_name == "GetFrostSensorEnabledLegacy":
+                            self._frost_sensor_legacy_supported = False
+
+                    if frost_sensor_enabled is not None:
+                        data["FrostSensorEnabled"] = bool(frost_sensor_enabled)
+                        data["FrostSensorWritable"] = frost_sensor_writable
+                        LOGGER.debug("FrostSensorEnabled: %s", data["FrostSensorEnabled"])
                     else:
                         self._frost_sensor_supported = False
                         LOGGER.debug(
                             "GetFrostSensorEnabled returned %s - disabling frost sensor polling",
-                            result.name,
+                            frost_sensor_result.name
+                            if frost_sensor_result is not None
+                            else "no response",
                         )
                 except (KeyError, ValueError, IndexError):
                     self._frost_sensor_supported = False
                     LOGGER.debug(
                         "GetFrostSensorEnabled failed - disabling frost sensor polling",
+                        exc_info=True,
+                    )
+
+            if poll_settings and self._garage_setting_supported:
+                try:
+                    result, garage_enabled = await self.mower.command_response(
+                        "GetGarageEnabled", warn_on_error=False
+                    )
+                    if result is ResponseResult.OK and garage_enabled is not None:
+                        data["GarageEnabled"] = bool(garage_enabled)
+                        data["garageSupported"] = True
+                        LOGGER.debug("GarageEnabled: %s", data["GarageEnabled"])
+                    else:
+                        self._garage_setting_supported = False
+                        LOGGER.debug(
+                            "GetGarageEnabled returned %s - disabling garage polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._garage_setting_supported = False
+                    LOGGER.debug(
+                        "GetGarageEnabled failed - disabling garage polling",
+                        exc_info=True,
+                    )
+
+            if poll_settings and self._anti_collision_radar_supported:
+                try:
+                    result, anti_collision_radar = await self.mower.command_response(
+                        "GetAntiCollisionRadar", warn_on_error=False
+                    )
+                    if (
+                        result is ResponseResult.OK
+                        and anti_collision_radar is not None
+                    ):
+                        data["AntiCollisionRadarEnabled"] = bool(
+                            anti_collision_radar["enabled"]
+                        )
+                        data["AntiCollisionRadarAvailable"] = bool(
+                            anti_collision_radar["available"]
+                        )
+                        data["antiCollisionRadarSupported"] = data[
+                            "AntiCollisionRadarAvailable"
+                        ]
+                        LOGGER.debug(
+                            "AntiCollisionRadar: enabled=%s available=%s",
+                            data["AntiCollisionRadarEnabled"],
+                            data["AntiCollisionRadarAvailable"],
+                        )
+                    else:
+                        self._anti_collision_radar_supported = False
+                        LOGGER.debug(
+                            "GetAntiCollisionRadar returned %s - disabling Anti-collision Radar polling",
+                            result.name,
+                        )
+                except (KeyError, ValueError, IndexError):
+                    self._anti_collision_radar_supported = False
+                    LOGGER.debug(
+                        "GetAntiCollisionRadar failed - disabling Anti-collision Radar polling",
                         exc_info=True,
                     )
 
@@ -693,8 +775,14 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         and supported_accessories is not None
                     ):
                         data["supportedAccessories"] = supported_accessories
-                        data["garageSupported"] = bool(supported_accessories & 1)
-                        data["zoneProtectSupported"] = bool(supported_accessories & 2)
+                        data["garageSupported"] = bool(
+                            data.get("garageSupported")
+                            or supported_accessories & 1
+                        )
+                        data["zoneProtectSupported"] = bool(
+                            data.get("zoneProtectSupported")
+                            or supported_accessories & 2
+                        )
                         LOGGER.debug(
                             "SupportedAccessories: %s",
                             supported_accessories,
