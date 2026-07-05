@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 GARDENA_WRITE_CHAR = "98bd0002-0b0e-421a-84e5-ddbf75dc6de4"
 GARDENA_READ_CHAR = "98bd0003-0b0e-421a-84e5-ddbf75dc6de4"
+GATT_AUTH_ERROR_TEXT = (
+    "Insufficient authentication",
+    "Insufficient authorization",
+    "Insufficient encryption",
+)
 
 
 class ModeOfOperation(IntEnum):
@@ -83,6 +88,10 @@ def _response_result_label(value: int) -> str:
     except ValueError:
         return f"UNKNOWN_RESULT({value})"
     return f"{result.name}({value})"
+
+
+def _is_gatt_auth_error(err: Exception) -> bool:
+    return any(text in str(err) for text in GATT_AUTH_ERROR_TEXT)
 
 
 class TaskInformation:
@@ -546,10 +555,32 @@ class BLEClient:
             await self.client.start_notify(self.read_char, notification_handler)
             self._notify_started = True
         except BleakError as err:
-            logger.warning("Unable to subscribe to mower notifications: %s", err)
-            if self.is_connected():
-                await self.disconnect()
-            return ResponseResult.NOT_ALLOWED
+            if _is_gatt_auth_error(err):
+                logger.info(
+                    "Notification subscription needs BLE authentication; "
+                    "retrying pairing once"
+                )
+                try:
+                    await self.client.pair()
+                    await asyncio.sleep(1.0)
+                    await self.client.start_notify(
+                        self.read_char, notification_handler
+                    )
+                    self._notify_started = True
+                except BleakError as retry_err:
+                    logger.warning(
+                        "Unable to subscribe to mower notifications after "
+                        "pairing retry: %s",
+                        retry_err,
+                    )
+                    if self.is_connected():
+                        await self.disconnect()
+                    return ResponseResult.NOT_ALLOWED
+            else:
+                logger.warning("Unable to subscribe to mower notifications: %s", err)
+                if self.is_connected():
+                    await self.disconnect()
+                return ResponseResult.NOT_ALLOWED
 
         await asyncio.sleep(5.0)
 

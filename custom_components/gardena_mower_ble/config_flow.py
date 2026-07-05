@@ -1,5 +1,6 @@
 """Config flow for Gardena Bluetooth integration."""
 
+import asyncio
 from collections.abc import Mapping
 import random
 from typing import Any
@@ -34,6 +35,7 @@ USER_SCHEMA = vol.Schema(
 )
 
 REAUTH_SCHEMA = BLUETOOTH_SCHEMA
+CONFIG_FLOW_BLE_TIMEOUT = 60
 
 
 def _pin_valid(pin: str) -> bool:
@@ -43,6 +45,19 @@ def _pin_valid(pin: str) -> bool:
     except (TypeError, ValueError):
         return False
     return True
+
+
+def _ble_device_summary(device) -> str:
+    """Return a safe BLE device summary for setup diagnostics."""
+    if device is None:
+        return "None"
+
+    details = getattr(device, "details", None)
+    return (
+        f"name={getattr(device, 'name', None)!r}, "
+        f"address={getattr(device, 'address', None)}, "
+        f"details={details!r}"
+    )
 
 
 class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -159,9 +174,15 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self.address
 
         try:
-            (manufacturer, device_type, _model) = await Mower(
-                channel_id, self.address
-            ).probe_gatts(device)
+            LOGGER.debug(
+                "Probing Gardena mower GATTs for %s using BLE device: %s",
+                self.address,
+                _ble_device_summary(device),
+            )
+            async with asyncio.timeout(CONFIG_FLOW_BLE_TIMEOUT):
+                (manufacturer, device_type, _model) = await Mower(
+                    channel_id, self.address
+                ).probe_gatts(device)
         except (BleakError, TimeoutError) as exception:
             LOGGER.warning("Failed to probe device (%s): %s", self.address, exception)
             LOGGER.debug("Full exception", exc_info=True)
@@ -190,12 +211,23 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
         """Check that the mower exists and is setup."""
         assert self.address
 
+        LOGGER.debug("Starting Gardena mower config flow check for %s", self.address)
         device = bluetooth.async_ble_device_from_address(
             self.hass, self.address, connectable=True
+        )
+        LOGGER.debug(
+            "Home Assistant Bluetooth selected device for %s: %s",
+            self.address,
+            _ble_device_summary(device),
         )
         if device is None:
             try:
                 device = await get_device(self.address)
+                LOGGER.debug(
+                    "Fallback BLE lookup selected device for %s: %s",
+                    self.address,
+                    _ble_device_summary(device),
+                )
             except (BleakError, TimeoutError) as exception:
                 LOGGER.warning(
                     "Unable to find BLE device for configured address %s: %s",
@@ -230,12 +262,22 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
 
             (channel_id, mower) = await self.connect_mower(device)
 
-            response_result = await mower.connect(device)
+            LOGGER.debug(
+                "Connecting to Gardena mower during config flow for %s",
+                self.address,
+            )
+            async with asyncio.timeout(CONFIG_FLOW_BLE_TIMEOUT):
+                response_result = await mower.connect(device)
+            LOGGER.debug(
+                "Gardena mower config flow connect result for %s: %s",
+                self.address,
+                response_result.name,
+            )
             if mower.is_connected():
                 await mower.disconnect()
 
             if response_result is not ResponseResult.OK:
-                LOGGER.debug("cannot connect, response: %s", response_result)
+                LOGGER.debug("Cannot connect, response: %s", response_result.name)
 
                 if (
                     response_result is ResponseResult.INVALID_PIN
@@ -269,9 +311,15 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                     ),
                     errors=errors,
                 )
-        except (TimeoutError, BleakError):
+        except (TimeoutError, BleakError) as exception:
             if "mower" in locals() and mower.is_connected():
                 await mower.disconnect()
+            LOGGER.warning(
+                "Gardena mower config flow failed while connecting to %s: %s",
+                self.address,
+                exception,
+            )
+            LOGGER.debug("Full exception", exc_info=True)
             return self.async_abort(reason="cannot_connect")
 
         return self.async_create_entry(

@@ -1,5 +1,7 @@
 """The Gardena Autoconnect Bluetooth integration."""
 
+import asyncio
+
 from .automower_ble.mower import Mower
 from .automower_ble.protocol import ResponseResult
 from bleak import BleakError
@@ -36,6 +38,8 @@ SERVICE_CLEAR_SCHEDULE = "clear_schedule"
 SERVICE_DELETE_SCHEDULE = "delete_schedule"
 SERVICE_LOG_ERROR_HISTORY = "log_error_history"
 SERVICE_REFRESH_DIAGNOSTICS = "refresh_diagnostics"
+CONNECT_AUTH_ATTEMPTS = 3
+CONNECT_AUTH_RETRY_DELAY = 3
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> bool:
@@ -60,17 +64,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
     setup_complete = False
     LOGGER.debug("connecting to %s with channel ID %s", address, str(channel_id))
     try:
-        device = bluetooth.async_ble_device_from_address(
-            hass, address, connectable=True
-        ) or await get_device(address)
-        response_result = await mower.connect(device)
+        response_result = ResponseResult.UNKNOWN_ERROR
+        for attempt in range(1, CONNECT_AUTH_ATTEMPTS + 1):
+            device = bluetooth.async_ble_device_from_address(
+                hass, address, connectable=True
+            ) or await get_device(address)
+            response_result = await mower.connect(device)
+            if response_result is ResponseResult.OK:
+                break
+            if (
+                response_result is not ResponseResult.NOT_ALLOWED
+                or attempt == CONNECT_AUTH_ATTEMPTS
+            ):
+                break
+
+            LOGGER.info(
+                "Mower BLE authentication was not ready on attempt %d/%d; "
+                "closing stale connections and retrying",
+                attempt,
+                CONNECT_AUTH_ATTEMPTS,
+            )
+            if mower.is_connected():
+                await mower.disconnect()
+            await close_stale_connections_by_address(address)
+            await asyncio.sleep(CONNECT_AUTH_RETRY_DELAY)
+
         if response_result == ResponseResult.INVALID_PIN:
             raise ConfigEntryAuthFailed(
                 f"Unable to connect to device {address} due to wrong PIN"
             )
         if response_result != ResponseResult.OK:
             raise ConfigEntryNotReady(
-                f"Unable to connect to device {address}, mower returned {response_result}"
+                f"Unable to connect to device {address}, mower returned {response_result.name}"
             )
         LOGGER.debug("connected and paired")
 
