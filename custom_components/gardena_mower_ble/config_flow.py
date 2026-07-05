@@ -60,6 +60,13 @@ def _ble_device_summary(device) -> str:
     )
 
 
+def _exception_summary(exception: BaseException) -> str:
+    """Return an exception summary that is useful when the message is empty."""
+    if str(exception):
+        return f"{type(exception).__name__}: {exception}"
+    return type(exception).__name__
+
+
 class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Gardena Bluetooth."""
 
@@ -184,11 +191,15 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                     channel_id, self.address
                 ).probe_gatts(device)
         except (BleakError, TimeoutError) as exception:
-            LOGGER.warning("Failed to probe device (%s): %s", self.address, exception)
+            LOGGER.warning(
+                "Failed to probe device (%s): %s",
+                self.address,
+                _exception_summary(exception),
+            )
             LOGGER.debug("Full exception", exc_info=True)
             return None
 
-        title = manufacturer + " " + device_type
+        title = f"{manufacturer or 'Gardena'} {device_type or _model or 'Mower'}"
 
         LOGGER.debug("Found device: %s", title)
 
@@ -232,7 +243,7 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                 LOGGER.warning(
                     "Unable to find BLE device for configured address %s: %s",
                     self.address,
-                    exception,
+                    _exception_summary(exception),
                 )
 
         title = await self.probe_mower(device)
@@ -317,7 +328,7 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
             LOGGER.warning(
                 "Gardena mower config flow failed while connecting to %s: %s",
                 self.address,
-                exception,
+                _exception_summary(exception),
             )
             LOGGER.debug("Full exception", exc_info=True)
             return self.async_abort(reason="cannot_connect")
@@ -383,7 +394,13 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                         data=reauth_entry.data | {CONF_PIN: self.pin},
                     )
 
-            except (TimeoutError, BleakError):
+            except (TimeoutError, BleakError) as exception:
+                LOGGER.warning(
+                    "Gardena mower reauth failed while connecting to %s: %s",
+                    self.address,
+                    _exception_summary(exception),
+                )
+                LOGGER.debug("Full exception", exc_info=True)
                 # We don't want to abort a reauth flow when we can't connect, so
                 # we just show the form again with an error.
                 errors["base"] = "cannot_connect"

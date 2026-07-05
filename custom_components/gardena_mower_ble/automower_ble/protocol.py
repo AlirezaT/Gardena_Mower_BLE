@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 GARDENA_WRITE_CHAR = "98bd0002-0b0e-421a-84e5-ddbf75dc6de4"
 GARDENA_READ_CHAR = "98bd0003-0b0e-421a-84e5-ddbf75dc6de4"
+GARDENA_PROTOCOL_DESCRIPTOR_CHAR = "98bd0004-0b0e-421a-84e5-ddbf75dc6de4"
 GATT_AUTH_ERROR_TEXT = (
     "Insufficient authentication",
     "Insufficient authorization",
@@ -632,44 +633,58 @@ class BLEClient:
         model = None
         device_type = None
 
-        for service in client.services:
-            logger.debug("[Service] %s", service)
+        try:
+            for service in client.services:
+                logger.debug("[Service] %s", service)
 
-            if service.uuid == "98bd0001-0b0e-421a-84e5-ddbf75dc6de4":
-                manufacture = service.description
+                if service.uuid == "98bd0001-0b0e-421a-84e5-ddbf75dc6de4":
+                    manufacture = service.description
 
-            for char in service.characteristics:
-                if "read" in char.properties:
-                    try:
-                        value = await client.read_gatt_char(char.uuid)
+                for char in service.characteristics:
+                    properties = ",".join(char.properties)
+                    should_read = char.uuid in (
+                        "00002a00-0000-1000-8000-00805f9b34fb",
+                        GARDENA_PROTOCOL_DESCRIPTOR_CHAR,
+                    )
+
+                    if char.uuid in (GARDENA_WRITE_CHAR, GARDENA_READ_CHAR):
+                        logger.debug("  [Characteristic] %s (%s)", char, properties)
+                        continue
+
+                    if "read" in char.properties and should_read:
+                        try:
+                            value = await client.read_gatt_char(char.uuid)
+                            logger.debug(
+                                "  [Characteristic] %s (%s), Value: %r",
+                                char,
+                                properties,
+                                value,
+                            )
+                        except Exception as e:
+                            logger.debug(
+                                "  [Characteristic] %s (%s), Error: %s",
+                                char,
+                                properties,
+                                e,
+                            )
+                            continue
+
+                        if char.uuid == "00002a00-0000-1000-8000-00805f9b34fb":
+                            model = value.decode()
+
+                        if char.uuid == GARDENA_PROTOCOL_DESCRIPTOR_CHAR:
+                            device_type = value.rstrip(b"\x00").decode()
+
+                    elif "read" in char.properties:
                         logger.debug(
-                            "  [Characteristic] %s (%s), Value: %r",
+                            "  [Characteristic] %s (%s), Value skipped during probe",
                             char,
-                            ",".join(char.properties),
-                            value,
+                            properties,
                         )
-                    except Exception as e:
-                        logger.error(
-                            "  [Characteristic] %s (%s), Error: %s",
-                            char,
-                            ",".join(char.properties),
-                            e,
-                        )
-
-                else:
-                    logger.debug(
-                        "  [Characteristic] %s (%s)", char, ",".join(char.properties)
-                    )
-
-                if char.uuid == "00002a00-0000-1000-8000-00805f9b34fb":
-                    model = (await client.read_gatt_char(char)).decode()
-
-                if char.uuid == "98bd0004-0b0e-421a-84e5-ddbf75dc6de4":
-                    device_type = (
-                        (await client.read_gatt_char(char)).rstrip(b"\x00").decode()
-                    )
-
-        await client.disconnect()
+                    else:
+                        logger.debug("  [Characteristic] %s (%s)", char, properties)
+        finally:
+            await client.disconnect()
 
         return (manufacture, device_type, model)
 
