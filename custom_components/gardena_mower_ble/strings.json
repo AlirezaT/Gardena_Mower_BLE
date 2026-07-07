@@ -11,7 +11,14 @@
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "Unable to pair with device, ensure the PIN is correct and the mower is in pairing mode",
-      "invalid_pin": "The PIN must be a number"
+      "invalid_pin": "The PIN must be a number",
+      "local_bluetooth_connection_failed": "Connection failed while using the Home Assistant server Bluetooth adapter. Gardena mowers can be sensitive to Linux Bluetooth pairing; try disabling the local adapter and use an ESPHome Bluetooth proxy close to the mower.",
+      "local_bluetooth_pairing_failed": "Pairing failed while using the Home Assistant server Bluetooth adapter. Put the mower in pairing mode and, if it still fails, disable the local adapter and use an ESPHome Bluetooth proxy close to the mower.",
+      "local_bluetooth_probe_failed": "Home Assistant reached the mower through the server Bluetooth adapter but could not read the mower details. Try disabling the local adapter and use an ESPHome Bluetooth proxy close to the mower.",
+      "mower_not_found": "Home Assistant cannot find a connectable mower advertisement. Wake the mower, put it in pairing mode, and check that your Bluetooth proxy can see it.",
+      "mower_not_pairable": "The mower is not advertising pairing mode. Put the mower in pairing mode, wait for Home Assistant to rediscover it, and try again.",
+      "pairing_failed": "Pairing failed. Check the PIN, put the mower in pairing mode, and make sure the Gardena app or another Bluetooth client is not connected.",
+      "probe_failed": "Home Assistant connected to the mower but could not read the mower details. Restart or move the Bluetooth proxy closer and try again."
     },
     "flow_title": "{name} ({address})",
     "step": {

@@ -60,6 +60,19 @@ def _ble_device_summary(device) -> str:
     )
 
 
+def _ble_device_uses_bluez_hci(device) -> bool:
+    """Return whether the selected BLE device is using the local BlueZ adapter."""
+    details = getattr(device, "details", None)
+    if not isinstance(details, dict):
+        return False
+
+    path = str(details.get("path", ""))
+    props = details.get("props", {})
+    adapter = str(props.get("Adapter", "")) if isinstance(props, dict) else ""
+
+    return "/org/bluez/hci" in path or "/org/bluez/hci" in adapter
+
+
 def _exception_summary(exception: BaseException) -> str:
     """Return an exception summary that is useful when the message is empty."""
     if str(exception):
@@ -76,6 +89,56 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
     mower_name: str = ""
     pin: str | None = None
     pairable: bool | None = None
+
+    def _connection_error_key(self, device, response_result: ResponseResult) -> str:
+        """Return the most helpful config-flow error for a failed setup response."""
+        if response_result is ResponseResult.INVALID_PIN:
+            return "invalid_auth"
+
+        if response_result is ResponseResult.NOT_ALLOWED:
+            if self.pairable is False:
+                return "mower_not_pairable"
+            if _ble_device_uses_bluez_hci(device):
+                return "local_bluetooth_pairing_failed"
+            return "pairing_failed"
+
+        if _ble_device_uses_bluez_hci(device):
+            return "local_bluetooth_connection_failed"
+
+        return "cannot_connect"
+
+    def _probe_error_key(self, device) -> str:
+        """Return the most helpful config-flow error for a failed GATT probe."""
+        if device is None:
+            return "mower_not_found"
+
+        if _ble_device_uses_bluez_hci(device):
+            return "local_bluetooth_probe_failed"
+
+        return "probe_failed"
+
+    async def _async_refresh_pairable_state(self) -> None:
+        """Refresh the latest pairable state from cached mower advertisements."""
+        if not self.address:
+            return
+
+        try:
+            manufacturer_data = (
+                await async_get_manufacturer_data({self.address})
+            ).get(self.address)
+        except (KeyError, RuntimeError) as exception:
+            LOGGER.debug(
+                "Unable to refresh mower advertisement data for %s: %s",
+                self.address,
+                _exception_summary(exception),
+            )
+            return
+
+        if manufacturer_data is None:
+            return
+
+        self.pairable = manufacturer_data.pairable
+        LOGGER.debug("Latest mower advertisement: %s", manufacturer_data)
 
     async def _is_supported(self, discovery_info: BluetoothServiceInfo):
         """Check if device is supported."""
@@ -231,6 +294,14 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
             self.address,
             _ble_device_summary(device),
         )
+        if _ble_device_uses_bluez_hci(device):
+            LOGGER.debug(
+                "Home Assistant selected the local BlueZ Bluetooth adapter for %s. "
+                "If pairing fails, try disabling this adapter and using an "
+                "ESPHome Bluetooth proxy close to the mower.",
+                self.address,
+            )
+
         if device is None:
             try:
                 device = await get_device(self.address)
@@ -246,14 +317,17 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                     _exception_summary(exception),
                 )
 
+        await self._async_refresh_pairable_state()
+
         title = await self.probe_mower(device)
         if title is None:
+            errors = {"base": self._probe_error_key(device)}
             if self.source == SOURCE_BLUETOOTH:
                 return self.async_show_form(
                     step_id="bluetooth_confirm",
                     data_schema=BLUETOOTH_SCHEMA,
                     description_placeholders={"name": self.address},
-                    errors={"base": "cannot_connect"},
+                    errors=errors,
                 )
             return self.async_show_form(
                 step_id="user",
@@ -264,7 +338,7 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_PIN: self.pin,
                     },
                 ),
-                errors={"base": "cannot_connect"},
+                errors=errors,
             )
         self.mower_name = title
 
@@ -290,13 +364,7 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
             if response_result is not ResponseResult.OK:
                 LOGGER.debug("Cannot connect, response: %s", response_result.name)
 
-                if (
-                    response_result is ResponseResult.INVALID_PIN
-                    or response_result is ResponseResult.NOT_ALLOWED
-                ):
-                    errors["base"] = "invalid_auth"
-                else:
-                    errors["base"] = "cannot_connect"
+                errors["base"] = self._connection_error_key(device, response_result)
 
                 if self.source == SOURCE_BLUETOOTH:
                     return self.async_show_form(
@@ -331,7 +399,32 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                 _exception_summary(exception),
             )
             LOGGER.debug("Full exception", exc_info=True)
-            return self.async_abort(reason="cannot_connect")
+            error_key = (
+                "local_bluetooth_connection_failed"
+                if _ble_device_uses_bluez_hci(device)
+                else "cannot_connect"
+            )
+            if self.source == SOURCE_BLUETOOTH:
+                return self.async_show_form(
+                    step_id="bluetooth_confirm",
+                    data_schema=BLUETOOTH_SCHEMA,
+                    description_placeholders={"name": self.mower_name or self.address},
+                    errors={"base": error_key},
+                )
+
+            suggested_values = {}
+            if self.address:
+                suggested_values[CONF_ADDRESS] = self.address
+            if self.pin:
+                suggested_values[CONF_PIN] = self.pin
+
+            return self.async_show_form(
+                step_id="user",
+                data_schema=self.add_suggested_values_to_schema(
+                    USER_SCHEMA, suggested_values
+                ),
+                errors={"base": error_key},
+            )
 
         return self.async_create_entry(
             title=title,
@@ -368,6 +461,7 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
         elif user_input is not None:
             reauth_entry = self._get_reauth_entry()
             self.pin = user_input[CONF_PIN]
+            device = None
 
             try:
                 assert self.address
@@ -381,18 +475,12 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 response_result = await mower.connect(device)
                 await mower.disconnect()
-                if (
-                    response_result is ResponseResult.INVALID_PIN
-                    or response_result is ResponseResult.NOT_ALLOWED
-                ):
-                    errors["base"] = "invalid_auth"
-                elif response_result is not ResponseResult.OK:
-                    errors["base"] = "cannot_connect"
-                else:
+                if response_result is ResponseResult.OK:
                     return self.async_update_reload_and_abort(
                         self._get_reauth_entry(),
                         data=reauth_entry.data | {CONF_PIN: self.pin},
                     )
+                errors["base"] = self._connection_error_key(device, response_result)
 
             except (TimeoutError, BleakError) as exception:
                 LOGGER.warning(
@@ -403,7 +491,11 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
                 LOGGER.debug("Full exception", exc_info=True)
                 # We don't want to abort a reauth flow when we can't connect, so
                 # we just show the form again with an error.
-                errors["base"] = "cannot_connect"
+                errors["base"] = (
+                    "local_bluetooth_connection_failed"
+                    if _ble_device_uses_bluez_hci(device)
+                    else "cannot_connect"
+                )
 
         return self.async_show_form(
             step_id="reauth_confirm",
