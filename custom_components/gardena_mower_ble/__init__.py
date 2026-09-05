@@ -2,8 +2,8 @@
 
 import asyncio
 
-from .automower_ble.mower import Mower
-from .automower_ble.protocol import ResponseResult
+from automower_ble.mower import Mower
+from automower_ble.protocol import ResponseResult
 from bleak import BleakError
 from bleak_retry_connector import close_stale_connections_by_address, get_device
 import voluptuous as vol

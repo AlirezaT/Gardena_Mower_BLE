@@ -1,1 +1,3 @@
 upstream_AutoMower-BLE/
+__pycache__/
+*.py[cod]

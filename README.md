@@ -19,6 +19,11 @@ The integration is based on the Home Assistant Automower BLE work, Gardena app
 behavior, decompiled APK analysis, and HCI snoop logs from real mower/app
 communication.
 
+Mower communication is provided by the original
+[`alistair23/AutoMower-BLE`](https://github.com/alistair23/AutoMower-BLE)
+library. Prereleases pin an immutable upstream commit until the corresponding
+library version is available from PyPI.
+
 ## Highlights
 
 - Local BLE connection, no cloud dependency.
@@ -398,5 +403,7 @@ logger:
 
 ## Credits
 
-Thanks to the Home Assistant Bluetooth mower work, the Gardena BLE community,
-and everyone collecting HCI snoop logs and testing commands on real mowers.
+Thanks to Alistair Francis and the contributors to
+[`AutoMower-BLE`](https://github.com/alistair23/AutoMower-BLE), the Home
+Assistant Bluetooth mower work, the Gardena BLE community, and everyone
+collecting HCI snoop logs and testing commands on real mowers.

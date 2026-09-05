@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from automower_ble.protocol import ResponseResult
+
 from homeassistant.components import bluetooth
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.const import EntityCategory
@@ -13,7 +15,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.protocol import ResponseResult
 from .entity import GardenaMowerBleDescriptorEntity
 
 

@@ -7,7 +7,11 @@ import math
 import re
 from typing import Any
 
+from automower_ble.mower import MAX_SCHEDULE_TASKS
+from automower_ble.protocol import TaskInformation
+
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
+
 try:
     from homeassistant.components.calendar.const import CalendarEntityFeature
 except ImportError:
@@ -18,8 +22,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import GardenaConfigEntry
-from .automower_ble.mower import MAX_SCHEDULE_TASKS
-from .automower_ble.protocol import TaskInformation
 from .entity import GardenaMowerBleEntity
 
 SUMMARY = "Mowing schedule"

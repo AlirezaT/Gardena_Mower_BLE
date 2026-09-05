@@ -14,6 +14,9 @@
   "issue_tracker": "https://github.com/AlirezaT/Gardena_Mower_BLE/issues",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "requirements": ["gardena-bluetooth==2.8.1"],
-  "version": "3.06"
+  "requirements": [
+    "automower-ble @ https://github.com/alistair23/AutoMower-BLE/archive/75e10fe378a38becb0035600c0a60b57cbdea2cd.tar.gz",
+    "gardena-bluetooth==2.8.1"
+  ],
+  "version": "3.07"
 }

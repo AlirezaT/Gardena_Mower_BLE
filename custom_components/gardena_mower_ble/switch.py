@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 
+from automower_ble.protocol import (
+    ModeOfOperation,
+    MowerActivity,
+    MowerState,
+    OverrideAction,
+    ResponseResult,
+)
+
 from homeassistant.components import bluetooth
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.const import EntityCategory
@@ -13,13 +21,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.protocol import (
-    ModeOfOperation,
-    MowerActivity,
-    MowerState,
-    OverrideAction,
-    ResponseResult,
-)
 from .entity import GardenaMowerBleDescriptorEntity
 
 ALWAYS_CREATE_SWITCHES = {

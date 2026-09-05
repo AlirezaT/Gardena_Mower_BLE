@@ -2,7 +2,7 @@
 
 import asyncio
 
-from .automower_ble.protocol import (
+from automower_ble.protocol import (
     ModeOfOperation,
     MowerActivity,
     MowerState,

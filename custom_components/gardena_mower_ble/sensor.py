@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from automower_ble.error_codes import ErrorCodes
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -10,15 +12,14 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     PERCENTAGE,
+    EntityCategory,
     UnitOfTemperature,
     UnitOfTime,
-    EntityCategory,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
-from .automower_ble.error_codes import ErrorCodes
 from .entity import GardenaMowerBleDescriptorEntity
 
 SPOT_CUTTING_STATES = {

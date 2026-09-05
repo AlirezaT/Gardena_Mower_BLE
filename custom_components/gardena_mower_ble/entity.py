@@ -4,7 +4,9 @@ import asyncio
 from contextlib import suppress
 from typing import Any
 
+from automower_ble.protocol import ResponseResult
 from bleak_retry_connector import close_stale_connections_by_address
+
 from homeassistant.components import bluetooth
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import (
@@ -15,7 +17,6 @@ from homeassistant.helpers.device_registry import (
 from homeassistant.helpers.entity import EntityDescription
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .automower_ble.protocol import ResponseResult
 from .const import DOMAIN, MANUFACTURER
 from .coordinator import GardenaCoordinator
 
