@@ -6,6 +6,7 @@ blueprint:
     the grass should be dry enough. Designed for Gardena Mower BLE, but generic
     enough for any lawn_mower entity with a manual duration number.
   domain: automation
+  source_url: https://github.com/AlirezaT/Gardena_Mower_BLE/blob/main/blueprints/automation/gardena_smart_mowing.yaml
   input:
     mower_entity:
       name: Mower
@@ -156,6 +157,82 @@ blueprint:
         entity:
           domain: input_button
           multiple: true
+    irrigation_active_entities:
+      name: Optional active irrigation entities
+      description: >-
+        Optional switches, valves, binary sensors, or selects that indicate
+        irrigation is running. Any state other than off, idle, rest, closed,
+        unknown, or unavailable is treated as active watering. Active watering
+        blocks mowing and restarts the lawn drying timer.
+      default: []
+      selector:
+        entity:
+          multiple: true
+    recent_rainfall_sensor:
+      name: Optional recent rainfall sensor
+      description: >-
+        Rolling rainfall depth for the configured water lookback period. Units
+        may be mm, cm, m, or inches. When unavailable, the legacy rain-age and
+        humidity estimate remains in use.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    recent_irrigation_sensor:
+      name: Optional recent irrigation sensor
+      description: >-
+        Rolling irrigation delivered during the configured water lookback
+        period. Volume units (L, m3, or gallons) are converted to water depth
+        using the irrigated area; depth units may be mm, cm, m, or inches.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    soil_moisture_sensor:
+      name: Optional soil moisture sensor
+      description: >-
+        Optional percentage sensor used as the strongest moisture signal. When
+        used together with rain and irrigation totals, soil moisture receives
+        70 percent of the moisture estimate weight.
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    irrigated_area_m2:
+      name: Irrigated lawn area
+      description: Set to 0 to use the complete configured lawn area.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 5000
+          step: 10
+          unit_of_measurement: m2
+          mode: box
+    water_lookback_days:
+      name: Rain and irrigation lookback
+      description: Period represented by the rolling rainfall and irrigation sensors.
+      default: 7
+      selector:
+        number:
+          min: 1
+          max: 14
+          step: 1
+          unit_of_measurement: d
+          mode: box
+    weekly_water_target_mm:
+      name: Weekly lawn water target
+      description: >-
+        Combined rain and irrigation depth considered sufficient in average
+        weather. The blueprint adjusts demand for temperature and exposure.
+      default: 25
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 1
+          unit_of_measurement: mm
+          mode: box
     lawn_area_m2:
       name: Lawn area
       description: Lawn area in square meters.
@@ -702,6 +779,9 @@ trigger:
     id: manual_watering
     entity_id: !input manual_watering_buttons
   - platform: state
+    id: irrigation_state
+    entity_id: !input irrigation_active_entities
+  - platform: state
     id: cleaning_reset
     entity_id: !input cleaning_reset_buttons
   - platform: state
@@ -727,6 +807,13 @@ variables:
   mowing_debt_updated_helper: !input mowing_debt_updated_helper
   wetness_blockers: !input wetness_blockers
   manual_watering_buttons: !input manual_watering_buttons
+  irrigation_active_entities: !input irrigation_active_entities
+  recent_rainfall_sensor: !input recent_rainfall_sensor
+  recent_irrigation_sensor: !input recent_irrigation_sensor
+  soil_moisture_sensor: !input soil_moisture_sensor
+  irrigated_area_m2: !input irrigated_area_m2
+  water_lookback_days: !input water_lookback_days
+  weekly_water_target_mm: !input weekly_water_target_mm
   lawn_area_m2: !input lawn_area_m2
   mower_capacity_m2_per_hour: !input mower_capacity_m2_per_hour
   weekly_coverage_multiplier: !input weekly_coverage_multiplier
@@ -794,9 +881,22 @@ variables:
       {% endif %}
     {% endfor %}
     {{ ns.active }}
+  irrigation_active: >-
+    {% set entities = irrigation_active_entities
+      if irrigation_active_entities is iterable and irrigation_active_entities is not string
+      else [irrigation_active_entities] %}
+    {% set inactive = ['off', 'idle', 'rest', 'closed', '0', 'unknown', 'unavailable', 'none', ''] %}
+    {% set ns = namespace(active=false) %}
+    {% for entity in entities %}
+      {% if entity and states(entity) | lower not in inactive %}
+        {% set ns.active = true %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.active }}
   rain_or_wet_blocker_active: >-
     {{ weather_condition in rain_conditions
-       or blocker_active | bool }}
+       or blocker_active | bool
+       or irrigation_active | bool }}
   current_wet: >-
     {{ rain_or_wet_blocker_active | bool
        or outdoor_humidity | float(0) >= humidity_block_threshold | float(92) }}
@@ -883,7 +983,89 @@ variables:
       {% else %}0.15
       {% endif %}
     {% endif %}
-  moisture_growth_factor: >-
+  use_recent_rainfall_sensor: >-
+    {{ recent_rainfall_sensor | length > 0
+       and is_number(states(recent_rainfall_sensor)) }}
+  use_recent_irrigation_sensor: >-
+    {{ recent_irrigation_sensor | length > 0
+       and is_number(states(recent_irrigation_sensor)) }}
+  use_soil_moisture_sensor: >-
+    {{ soil_moisture_sensor | length > 0
+       and is_number(states(soil_moisture_sensor)) }}
+  recent_rainfall_mm: >-
+    {% if not use_recent_rainfall_sensor | bool %}
+      0
+    {% else %}
+      {% set value = states(recent_rainfall_sensor) | float(0) %}
+      {% set unit = state_attr(recent_rainfall_sensor, 'unit_of_measurement') | default('mm', true) | lower | replace(' ', '') %}
+      {% if unit in ['in', 'inch', 'inches', '″'] %}
+        {{ value * 25.4 }}
+      {% elif unit in ['cm'] %}
+        {{ value * 10 }}
+      {% elif unit in ['m'] %}
+        {{ value * 1000 }}
+      {% else %}
+        {{ value }}
+      {% endif %}
+    {% endif %}
+  effective_irrigated_area_m2: >-
+    {% set configured = irrigated_area_m2 | float(0) %}
+    {{ configured if configured > 0 else lawn_area_m2 | float(1) }}
+  recent_irrigation_mm: >-
+    {% if not use_recent_irrigation_sensor | bool %}
+      0
+    {% else %}
+      {% set value = states(recent_irrigation_sensor) | float(0) %}
+      {% set unit = state_attr(recent_irrigation_sensor, 'unit_of_measurement') | default('', true) | lower | replace(' ', '') %}
+      {% set area = [effective_irrigated_area_m2 | float(1), 1] | max %}
+      {% if unit in ['mm'] %}
+        {{ value }}
+      {% elif unit in ['cm'] %}
+        {{ value * 10 }}
+      {% elif unit in ['m'] %}
+        {{ value * 1000 }}
+      {% elif unit in ['in', 'inch', 'inches', '″'] %}
+        {{ value * 25.4 }}
+      {% elif unit in ['m³', 'm3', '㎥'] %}
+        {{ value * 1000 / area }}
+      {% elif unit in ['gal', 'gallon', 'gallons', 'usgal'] %}
+        {{ value * 3.785411784 / area }}
+      {% elif unit in ['impgal', 'imperialgal'] %}
+        {{ value * 4.54609 / area }}
+      {% else %}
+        {{ value / area }}
+      {% endif %}
+    {% endif %}
+  recent_water_mm: >-
+    {{ [recent_rainfall_mm | float(0) + recent_irrigation_mm | float(0), 0] | max }}
+  water_demand_mm: >-
+    {% set temp = outdoor_temperature | float(20) %}
+    {% set temp_factor = 0.45 if temp < 10 else 0.65 if temp < 15 else 0.85 if temp < 22 else 1.0 if temp <= 28 else 1.2 if temp <= 33 else 1.4 %}
+    {% set exposure_factor = 1.15 if lawn_exposure == 'Sunny/open' else 0.85 if lawn_exposure == 'Shaded/north-facing' else 1.0 %}
+    {% set period_target = weekly_water_target_mm | float(25) * ([water_lookback_days | float(7), 1] | max) / 7 %}
+    {{ [period_target * temp_factor * exposure_factor, 1] | max }}
+  water_supply_ratio: >-
+    {{ recent_water_mm | float(0) / ([water_demand_mm | float(1), 1] | max) }}
+  water_supply_growth_factor: >-
+    {% set ratio = water_supply_ratio | float(0) %}
+    {% if ratio < 0.15 %}0.4
+    {% elif ratio < 0.35 %}0.55
+    {% elif ratio < 0.6 %}0.72
+    {% elif ratio < 0.85 %}0.88
+    {% elif ratio <= 1.4 %}1.0
+    {% elif ratio <= 2.0 %}1.08
+    {% else %}1.0
+    {% endif %}
+  soil_moisture_growth_factor: >-
+    {% set moisture = states(soil_moisture_sensor) | float(0) %}
+    {% if moisture < 15 %}0.35
+    {% elif moisture < 25 %}0.55
+    {% elif moisture < 35 %}0.75
+    {% elif moisture < 65 %}1.0
+    {% elif moisture < 80 %}1.05
+    {% else %}0.95
+    {% endif %}
+  legacy_moisture_growth_factor: >-
     {% set rain_age = last_rain_age_hours | float(9999) %}
     {% set humidity = outdoor_humidity | float(0) %}
     {% if rain_age <= 72 and outdoor_temperature | float(0) >= 10 %}
@@ -894,6 +1076,17 @@ variables:
       1.05
     {% else %}
       1.0
+    {% endif %}
+  moisture_growth_factor: >-
+    {% set has_water = use_recent_rainfall_sensor | bool or use_recent_irrigation_sensor | bool %}
+    {% if use_soil_moisture_sensor | bool and has_water %}
+      {{ soil_moisture_growth_factor | float(1) * 0.7 + water_supply_growth_factor | float(1) * 0.3 }}
+    {% elif use_soil_moisture_sensor | bool %}
+      {{ soil_moisture_growth_factor }}
+    {% elif has_water %}
+      {{ water_supply_growth_factor }}
+    {% else %}
+      {{ legacy_moisture_growth_factor }}
     {% endif %}
   smart_growth_factor: >-
     {% set factor =
@@ -983,19 +1176,25 @@ variables:
     {% endif %}
   today_sunrise_ts: >-
     {% set next_rising = as_timestamp(state_attr('sun.sun', 'next_rising'), none) %}
+    {% set today_start = as_timestamp(today_at('00:00:00')) %}
+    {% set tomorrow_start = as_timestamp(today_at('00:00:00') + timedelta(days=1)) %}
     {% if next_rising is none %}
       {{ as_timestamp(today_at('06:00:00')) }}
-    {% elif is_state('sun.sun', 'above_horizon') %}
-      {{ next_rising - 86400 }}
-    {% else %}
+    {% elif today_start <= next_rising < tomorrow_start %}
       {{ next_rising }}
+    {% else %}
+      {{ next_rising - 86400 }}
     {% endif %}
   today_sunset_ts: >-
     {% set next_setting = as_timestamp(state_attr('sun.sun', 'next_setting'), none) %}
+    {% set today_start = as_timestamp(today_at('00:00:00')) %}
+    {% set tomorrow_start = as_timestamp(today_at('00:00:00') + timedelta(days=1)) %}
     {% if next_setting is none %}
       {{ as_timestamp(today_at('18:00:00')) }}
-    {% else %}
+    {% elif today_start <= next_setting < tomorrow_start %}
       {{ next_setting }}
+    {% else %}
+      {{ next_setting - 86400 }}
     {% endif %}
   exposure_dry_factor: >-
     {% if lawn_exposure == 'Sunny/open' %}
@@ -1655,6 +1854,7 @@ action:
           Next {{ start_ts | timestamp_custom('%a %H:%M', true) }},
           {{ duration }}m; debt {{ updated_mowing_debt_minutes | int(0) }}m,
           growth x{{ smart_growth_factor | float(1) | round(2) }};
+          {% if use_recent_rainfall_sensor | bool or use_recent_irrigation_sensor | bool %}water {{ recent_water_mm | float(0) | round(1) }}/{{ water_demand_mm | float(0) | round(1) }}mm;{% elif use_soil_moisture_sensor | bool %}soil {{ states(soil_moisture_sensor) | float(0) | round(0) }}%;{% else %}legacy moisture;{% endif %}
           {% if ns.times | count > 0 %}later {{ ns.times | join(', ') }}{% else %}no later slots{% endif %}{% if sessions > ((ns.times | count) + 1) %}, +{{ sessions - ((ns.times | count) + 1) }} more{% endif %}
         {% endif %}
 
