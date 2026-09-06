@@ -5,17 +5,16 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from automower_ble.error_codes import ErrorCodes
-from automower_ble.mower import Mower
 from automower_ble.protocol import ResponseResult
 from bleak import BleakError
 from bleak_retry_connector import close_stale_connections_by_address
-
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .connection import Mower
 from .const import DOMAIN, LOGGER
 
 if TYPE_CHECKING:
@@ -183,7 +182,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     LOGGER.debug(
                         "Timed out waiting for active mower command during shutdown"
                     )
-            await self.mower.disconnect()
+        await self.mower.disconnect()
         if self._delayed_refresh_cancel is not None:
             self._delayed_refresh_cancel()
             self._delayed_refresh_cancel = None
@@ -229,17 +228,19 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_find_device(self):
         LOGGER.debug("Trying to reconnect")
-        await close_stale_connections_by_address(self.address)
-
-        device = bluetooth.async_ble_device_from_address(
-            self.hass, self.address, connectable=True
-        )
-
-        try:
-            if await self.mower.connect(device) is not ResponseResult.OK:
-                raise UpdateFailed("Failed to connect")
-        except BleakError as err:
-            raise UpdateFailed("Failed to connect") from err
+        async with self.mower.lock:
+            if self.mower.is_connected():
+                return
+            await self.mower.disconnect()
+            await close_stale_connections_by_address(self.address)
+            device = bluetooth.async_ble_device_from_address(
+                self.hass, self.address, connectable=True
+            )
+            try:
+                if await self.mower.connect(device) is not ResponseResult.OK:
+                    raise UpdateFailed("Failed to connect")
+            except BleakError as err:
+                raise UpdateFailed("Failed to connect") from err
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Poll the device."""

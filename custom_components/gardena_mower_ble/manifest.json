@@ -18,5 +18,5 @@
     "automower-ble @ https://github.com/alistair23/AutoMower-BLE/archive/75e10fe378a38becb0035600c0a60b57cbdea2cd.tar.gz",
     "gardena-bluetooth==2.8.1"
   ],
-  "version": "3.07"
+  "version": "3.07.1"
 }

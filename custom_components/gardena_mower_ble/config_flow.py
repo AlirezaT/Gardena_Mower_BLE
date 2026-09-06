@@ -1,24 +1,23 @@
 """Config flow for Gardena Bluetooth integration."""
 
 import asyncio
-from collections.abc import Mapping
 import random
+from collections.abc import Mapping
 from typing import Any
 
-from automower_ble.mower import Mower
+import voluptuous as vol
 from automower_ble.protocol import ResponseResult
 from bleak import BleakError
 from bleak_retry_connector import get_device
 from gardena_bluetooth.const import ScanService
 from gardena_bluetooth.parse import ProductType
 from gardena_bluetooth.scan import async_get_manufacturer_data
-import voluptuous as vol
-
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfo
 from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_CLIENT_ID, CONF_PIN
 
+from .connection import Mower
 from .const import DOMAIN, LOGGER
 
 BLUETOOTH_SCHEMA = vol.Schema(

@@ -2,12 +2,10 @@
 
 import asyncio
 
-from automower_ble.mower import Mower
+import voluptuous as vol
 from automower_ble.protocol import ResponseResult
 from bleak import BleakError
-from bleak_retry_connector import close_stale_connections_by_address, get_device
-import voluptuous as vol
-
+from bleak_retry_connector import close_stale_connections_by_address
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, CONF_CLIENT_ID, CONF_PIN, Platform
@@ -18,6 +16,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
 )
 
+from .connection import Mower
 from .const import DOMAIN, LOGGER
 from .coordinator import GardenaCoordinator
 
@@ -68,7 +67,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
         for attempt in range(1, CONNECT_AUTH_ATTEMPTS + 1):
             device = bluetooth.async_ble_device_from_address(
                 hass, address, connectable=True
-            ) or await get_device(address)
+            )
+            if device is None:
+                raise ConfigEntryNotReady(
+                    "Mower is not visible to a connectable Home Assistant Bluetooth "
+                    "adapter; check the proxy and mower signal"
+                )
             response_result = await mower.connect(device)
             if response_result is ResponseResult.OK:
                 break
@@ -113,7 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
             f"Unable to connect to device {address} due to {exception}"
         ) from exception
     finally:
-        if not setup_complete and mower.is_connected():
+        if not setup_complete:
             await mower.disconnect()
 
     return True
