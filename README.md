@@ -21,14 +21,20 @@ communication.
 
 Mower communication is provided by the original
 [`alistair23/AutoMower-BLE`](https://github.com/alistair23/AutoMower-BLE)
-library. Prereleases pin an immutable upstream commit until the corresponding
-library version is available from PyPI.
+library, not a local fork or a PR branch. Version 3.08 pins upstream commit
+[`4bf4b009`](https://github.com/alistair23/AutoMower-BLE/commit/4bf4b00959f9ef712b5e1beebd725b0c75c80637),
+the latest upstream main revision checked on 2026-09-08. This includes the merged
+Gardena commands (PR #148), SILENO sense 600/650 model additions (PR #159), and
+clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates these
+changes. We pin a tested immutable revision for reproducible installations;
+updates to upstream main are not installed automatically.
 
 ## Highlights
 
 - Local BLE connection, no cloud dependency.
 - Home Assistant lawn mower entity with start, pause, and dock.
-- Manual mowing duration control.
+- Manual mowing duration control, persisted across restarts and integration
+  reloads, including half-hour values.
 - Weekly schedule calendar with create, update, and delete support.
 - SpotCut switch with live state tracking.
 - Starting point configuration, including charging station distance.
@@ -63,6 +69,11 @@ library version is available from PyPI.
 5. Restart Home Assistant.
 6. Add the integration from `Settings -> Devices & services`.
 
+For the 3.08 preview, enable beta versions in HACS and select `v3.08-beta.1`,
+then restart Home Assistant. Existing blueprint users must also re-import the
+blueprint using the URL below and reload automations. Updating the integration
+does not update imported blueprints or flash ESPHome proxy firmware.
+
 ### Manual
 
 1. Copy `custom_components/gardena_mower_ble` into your Home Assistant
@@ -79,23 +90,19 @@ ESPHome Bluetooth proxy was used successfully.
 Example ESPHome configuration:
 
 ```yaml
+wifi:
+  # Keep your existing Wi-Fi credentials and other options.
+  power_save_mode: none
+
 esp32_ble_tracker:
   scan_parameters:
-    active: false
-    continuous: false
-    duration: 50sec
+    active: true
+    continuous: true
 
 bluetooth_proxy:
   active: true
   cache_services: true
 
-time:
-  - platform: homeassistant
-    on_time:
-      - seconds: 0
-        minutes: "*"
-        then:
-          - esp32_ble_tracker.start_scan:
 ```
 
 Notes:
@@ -105,8 +112,14 @@ Notes:
 - `bluetooth_proxy.active: true` is needed for Home Assistant to make active BLE
   connections through the proxy.
 - `cache_services: true` helps avoid repeated full service discovery.
-- Non-continuous scanning is gentler on the BLE environment. The example starts
-  a scan once per minute for 50 seconds.
+- Continuous scanning avoids scheduled gaps in mower discovery. Tracker
+  `active` scanning and proxy `active` connections are separate settings.
+- Remove any old timed `start_scan` actions when using continuous scanning.
+- Keep Home Assistant's ESPHome Bluetooth scanning mode on Auto unless you
+  intentionally want it to override the firmware scan setting.
+- ESP-IDF is suitable for a dedicated proxy. For a combined light/proxy, check
+  the light driver's framework requirements before switching frameworks; do
+  not copy a dedicated proxy's framework blindly onto a lighting device.
 - Avoid configuring the mower as an ESPHome `ble_client` at the same time as
   Home Assistant is using it. Only one client can maintain the mower connection
   reliably.
@@ -138,6 +151,13 @@ The newer algorithm works like a small mowing budget:
 - mower recharge pauses are treated as part of the same run until a grace period
   expires
 
+The weekly budget is at least `minimum sessions × minimum session length`.
+For example, five sessions of at least 60 minutes establish a 300-minute weekly
+floor; a higher area/growth-based need still takes precedence. This prevents a
+low growth estimate from defeating the configured minimum and postponing the
+next session unnecessarily. It is a budget target, not a guarantee: rain,
+excluded days, available dry windows and mower limits can still reduce mowing.
+
 Inputs include:
 
 - weather entity with hourly forecast; rainy-days reporting also uses the
@@ -153,6 +173,8 @@ Inputs include:
 - excluded mowing weekdays; weekly mowing need is spread over the remaining days
 - allowed mowing time window, either fixed or relative to sunrise/sunset
 - rain forecast thresholds
+- optional measured rainfall and irrigation totals, their shared lookback
+  period, and optional soil moisture for water-aware growth estimates
 - rainy-days report lookahead
 - drying delay after rain and morning dew drying time
 - optional binary sensors/helpers that block mowing, such as Smart Irrigation,
@@ -183,6 +205,21 @@ Optional helpers:
   lifetime counter
 - optional `input_button` helpers for "refresh smart mowing schedule", "manual
   watering", "mower cleaned", and "blades changed"
+
+### Measured Rainfall And Irrigation
+
+Rainfall plus irrigation can adjust the estimated growth rate, separately from
+the wet-grass safety blockers. Supply water totals for the same lookback period:
+for example, rolling seven-day rainfall and irrigation totals require a
+seven-day lookback. An irrigation volume needs the configured irrigated area
+(or the full lawn area when that input is zero) to
+convert it to water depth. AquaPrecise data can be used once suitable sensors
+are exposed in Home Assistant; selecting a device alone does not provide totals.
+
+When a configured total is unavailable, the blueprint falls back to soil
+moisture, then its weather-based estimate, instead of interpreting missing data
+as zero water. A valid zero total still indicates dry conditions. An unavailable
+irrigation blocker is reported as unavailable, not falsely as active irrigation.
 
 ### Manual Irrigation Button
 
@@ -381,6 +418,13 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
 - Not every mower model supports every BLE command. Unsupported features are
   disabled at runtime after the mower reports that a command is unavailable.
 - Some diagnostic values are model and firmware dependent.
+- The SILENO City restart/start report (#11) has software recovery coverage,
+  but still needs confirmation on the affected physical mower. An explicit
+  start can reconnect and retry once after an ambiguous/busy BLE response;
+  state is checked before retrying to avoid replaying an accepted start.
+- Loading the integration does not start mowing, clear schedules, or force an
+  operating mode. Physical STOP/PIN/error states and firmware daily operating
+  limits are not bypassed by the recovery logic.
 - This is an unofficial community integration and is not affiliated with Gardena
   or Husqvarna.
 
@@ -399,6 +443,7 @@ logger:
   default: warning
   logs:
     custom_components.gardena_mower_ble: debug
+    automower_ble: debug
 ```
 
 ## Credits

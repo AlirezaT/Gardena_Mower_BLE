@@ -21,6 +21,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
 from .const import LOGGER
+from .control import start_manual_mowing
 from .coordinator import GardenaCoordinator
 from .entity import GardenaMowerBleEntity
 
@@ -113,18 +114,14 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         """Start mowing."""
         LOGGER.debug("Starting mower")
 
-        if not self.coordinator.mower.is_connected():
-            device = bluetooth.async_ble_device_from_address(
-                self.coordinator.hass, self.coordinator.address, connectable=True
+        try:
+            await start_manual_mowing(
+                self.coordinator.mower,
+                self.coordinator.manual_mowing_duration_hours,
+                self.coordinator._async_find_device,
             )
-            if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
-                return
-
-        result = await self.coordinator.mower.mower_override(
-            self.coordinator.manual_mowing_duration_hours
-        )
-        if result is not ResponseResult.OK:
-            raise HomeAssistantError(f"Start mowing failed: {result.name}")
+        except Exception as err:
+            raise HomeAssistantError(str(err)) from err
         self.coordinator.update_cached_data(
             {
                 "activity": MowerActivity.MOWING,

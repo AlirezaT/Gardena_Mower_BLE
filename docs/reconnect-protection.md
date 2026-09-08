@@ -25,3 +25,27 @@ python -m unittest discover -s tests -v
 These tests exercise races, incomplete authentication, disconnected writes,
 timeouts and schedule-lock cleanup without commanding a physical mower. They do
 not establish radio coverage or guarantee Bluetooth proxy firmware stability.
+
+## Explicit start recovery (3.08 preview)
+
+An explicit start reads mower state before issuing the upstream manual
+override. UNKNOWN_ERROR, DEVICE_BUSY, or a lost BLE response allow at most one
+fresh-session retry. State is read back before retrying; an already accepted
+start is not replayed. Physical STOP/PIN/error states and pending start with no
+activity are surfaced to the user, not treated as a successful start. Permanent
+command failures report the response, state and activity instead of a bare
+UNKNOWN_ERROR. Setup itself never invokes this recovery or writes mower modes.
+
+Issue #11 remains a candidate fix pending a test on the affected SILENO City;
+there was no failure trace with which to prove a hardware-specific cause.
+
+The manual-duration virtual number is stored in config-entry options. Existing
+restore data is migrated when available, with a validated three-hour default
+otherwise. The value is loaded when constructing the coordinator, so reloads do
+not depend on entity restoration order. Half-hour values retain their fraction.
+
+For 3.08-beta.1, tests were run against upstream commit
+`4bf4b00959f9ef712b5e1beebd725b0c75c80637`: 36 local tests (connection lifecycle,
+duration persistence, start recovery, and blueprint templates) and 24 upstream
+protocol tests. HA-facing persistence methods use lightweight collaborators in
+the regression suite; this is not a full Home Assistant restart/hardware test.

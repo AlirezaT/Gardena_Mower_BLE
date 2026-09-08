@@ -8,6 +8,7 @@ from homeassistant.components.number import (
     NumberEntity,
     NumberEntityDescription,
     NumberMode,
+    RestoreNumber,
 )
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfLength, UnitOfTime
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
 from .const import LOGGER
+from .duration import CONF_MANUAL_MOWING_DURATION, validate_duration
 from .entity import GardenaMowerBleDescriptorEntity
 
 DRIVE_PAST_WIRE_SCALE = 10
@@ -120,7 +122,11 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
 
     async_add_entities(
-        GardenaMowerBleNumber(coordinator, description)
+        (
+            GardenaMowerBleManualDuration(coordinator, description)
+            if description.key == "ManualMowingDuration"
+            else GardenaMowerBleNumber(coordinator, description)
+        )
         for description in DESCRIPTIONS
         if description.key in coordinator.data
     )
@@ -138,15 +144,14 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
         if value is None:
             return None
 
-        return int(value) / self.entity_description.scale
+        return float(value) / self.entity_description.scale
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the number value."""
         description = self.entity_description
         LOGGER.debug("Setting %s to %s", description.key, value)
         if description.key == "ManualMowingDuration":
-            self.coordinator.manual_mowing_duration_hours = value
-            self.coordinator.update_cached_data({description.key: value})
+            self.coordinator.set_manual_mowing_duration(value)
             return
 
         if (
@@ -187,3 +192,26 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
             == "proportion",
         )
         self.coordinator.schedule_settings_refresh()
+
+
+class GardenaMowerBleManualDuration(GardenaMowerBleNumber, RestoreNumber):
+    """Restore the previous virtual number when upgrading an existing entry."""
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if CONF_MANUAL_MOWING_DURATION in self.coordinator.config_entry.options:
+            return
+        restored = await self.async_get_last_number_data()
+        if restored is not None:
+            previous_value = restored.native_value
+        else:
+            # Versions before 3.08 did not store Number extra data.
+            state = await self.async_get_last_state()
+            if state is None:
+                return
+            previous_value = state.state
+        try:
+            value = validate_duration(previous_value)
+        except (TypeError, ValueError):
+            return
+        self.coordinator.set_manual_mowing_duration(value)

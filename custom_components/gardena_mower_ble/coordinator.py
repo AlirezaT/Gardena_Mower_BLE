@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from .connection import Mower
 from .const import DOMAIN, LOGGER
+from .duration import CONF_MANUAL_MOWING_DURATION, saved_duration, validate_duration
 
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
@@ -27,7 +28,6 @@ DIAGNOSTIC_POLL_INTERVAL = timedelta(minutes=5)
 RECENT_DATA_TIMEOUT = timedelta(minutes=5)
 ACTION_REFRESH_DELAY = 2
 SETTINGS_REFRESH_DELAY = 4
-DEFAULT_MANUAL_MOWING_DURATION_HOURS = 3.0
 
 
 class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -77,11 +77,21 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_realtime_poll: datetime | None = None
         self._last_settings_poll: datetime | None = None
         self._last_diagnostic_poll: datetime | None = None
-        self.manual_mowing_duration_hours = DEFAULT_MANUAL_MOWING_DURATION_HOURS
+        self.manual_mowing_duration_hours = saved_duration(config_entry.options)
         self._delayed_refresh_cancel = None
         self._delayed_settings_refresh_cancel = None
         self._cache_update_generation = 0
         self._optimistic_update_generations: dict[str, int] = {}
+
+    def set_manual_mowing_duration(self, value: float) -> None:
+        """Persist the virtual setting without changing the mower's mode."""
+        value = validate_duration(value)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={**self.config_entry.options, CONF_MANUAL_MOWING_DURATION: value},
+        )
+        self.manual_mowing_duration_hours = value
+        self.update_cached_data({"ManualMowingDuration": value})
 
     def update_cached_data(
         self,
