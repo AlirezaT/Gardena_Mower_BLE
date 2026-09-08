@@ -184,6 +184,8 @@ blueprint:
         Rolling irrigation delivered during the configured water lookback
         period. Volume units (L, m3, or gallons) are converted to water depth
         using the irrigated area; depth units may be mm, cm, m, or inches.
+        If a configured water-total sensor is unavailable, use soil moisture or
+        the legacy moisture estimate instead of interpreting missing water as zero.
       default: ""
       selector:
         entity:
@@ -312,6 +314,10 @@ blueprint:
             - Shaded/north-facing
     min_sessions_per_week:
       name: Minimum sessions per week
+      description: >-
+        Planning target for available mowing days. Together with minimum session
+        length, sets a minimum weekly cutting-time budget even when estimated
+        growth is low. Wet weather and allowed windows can reduce actual sessions.
       default: 2
       selector:
         number:
@@ -893,6 +899,17 @@ variables:
       {% endif %}
     {% endfor %}
     {{ ns.active }}
+  irrigation_status_unavailable: >-
+    {% set entities = irrigation_active_entities
+      if irrigation_active_entities is iterable and irrigation_active_entities is not string
+      else [irrigation_active_entities] %}
+    {% set ns = namespace(missing=false) %}
+    {% for entity in entities %}
+      {% if entity and states(entity) | lower in ['unknown', 'unavailable', 'none', ''] %}
+        {% set ns.missing = true %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.missing }}
   rain_or_wet_blocker_active: >-
     {{ weather_condition in rain_conditions
        or blocker_active | bool
@@ -989,6 +1006,12 @@ variables:
   use_recent_irrigation_sensor: >-
     {{ recent_irrigation_sensor | length > 0
        and is_number(states(recent_irrigation_sensor)) }}
+  water_totals_incomplete: >-
+    {{ (recent_rainfall_sensor | length > 0 and not use_recent_rainfall_sensor | bool)
+       or (recent_irrigation_sensor | length > 0 and not use_recent_irrigation_sensor | bool) }}
+  use_water_totals_for_growth: >-
+    {{ (use_recent_rainfall_sensor | bool or use_recent_irrigation_sensor | bool)
+       and not water_totals_incomplete | bool }}
   use_soil_moisture_sensor: >-
     {{ soil_moisture_sensor | length > 0
        and is_number(states(soil_moisture_sensor)) }}
@@ -1078,7 +1101,7 @@ variables:
       1.0
     {% endif %}
   moisture_growth_factor: >-
-    {% set has_water = use_recent_rainfall_sensor | bool or use_recent_irrigation_sensor | bool %}
+    {% set has_water = use_water_totals_for_growth | bool %}
     {% if use_soil_moisture_sensor | bool and has_water %}
       {{ soil_moisture_growth_factor | float(1) * 0.7 + water_supply_growth_factor | float(1) * 0.3 }}
     {% elif use_soil_moisture_sensor | bool %}
@@ -1097,7 +1120,7 @@ variables:
       * moisture_growth_factor | float(1)
       * (growth_adjustment_percent | float(100) / 100) %}
     {{ [[factor, 0.1] | max, 2.5] | min }}
-  weekly_minutes_needed: >-
+  growth_weekly_minutes_needed: >-
     {{ (base_weekly_minutes_needed | float(0) * smart_growth_factor | float(1)) | round(0, 'ceil') }}
   excluded_mowing_weekday_count: >-
     {% set excluded = excluded_mowing_weekdays
@@ -1106,12 +1129,17 @@ variables:
     {{ excluded | reject('eq', '') | list | count }}
   active_mowing_weekday_count: >-
     {{ [7 - (excluded_mowing_weekday_count | int(0)), 1] | max }}
+  effective_min_sessions: >-
+    {{ [min_sessions_per_week | int(1), active_mowing_weekday_count | int(1), max_sessions_per_week | int(7)] | min }}
+  minimum_weekly_minutes_needed: >-
+    {{ effective_min_sessions | int(1) * ([min_session_minutes | float(30), max_session_minutes | float(180)] | min) }}
+  weekly_minutes_needed: >-
+    {{ [growth_weekly_minutes_needed | float(0), minimum_weekly_minutes_needed | float(0)] | max | round(0, 'ceil') }}
   calculated_sessions_per_week: >-
     {% set weekly = weekly_minutes_needed | float(0) %}
     {% set max_minutes = max_session_minutes | float(180) %}
     {% set raw_sessions = ((weekly / max_minutes) | round(0, 'ceil')) | int %}
-    {% set effective_min_sessions = [min_sessions_per_week | int(1), active_mowing_weekday_count | int(1)] | min %}
-    {% set raw_sessions = [raw_sessions, effective_min_sessions] | max %}
+    {% set raw_sessions = [raw_sessions, effective_min_sessions | int(1)] | max %}
     {{ [raw_sessions, max_sessions_per_week | int(7)] | min }}
   calculated_session_minutes: >-
     {% set sessions = calculated_sessions_per_week | int(1) %}
@@ -1119,7 +1147,7 @@ variables:
     {% set raw_minutes = [raw_minutes, min_session_minutes | float(30)] | max %}
     {{ [raw_minutes, max_session_minutes | float(180)] | min }}
   daily_mowing_minutes_needed: >-
-    {{ (weekly_minutes_needed | float(0) / (active_mowing_weekday_count | int(1))) | round(1) }}
+    {{ (weekly_minutes_needed | float(0) / (active_mowing_weekday_count | int(1))) | round(3) }}
   use_mowing_debt_helper: >-
     {{ mowing_debt_helper | length > 0
        and mowing_debt_updated_helper | length > 0
@@ -1153,9 +1181,9 @@ variables:
   updated_mowing_debt_minutes: >-
     {% if use_mowing_debt_helper | bool %}
       {% set gained = daily_mowing_minutes_needed | float(0) / 24 * debt_elapsed_hours | float(0) %}
-      {{ [stored_mowing_debt_minutes | float(0) + gained, 0] | max | round(1) }}
+      {{ [stored_mowing_debt_minutes | float(0) + gained, 0] | max | round(3) }}
     {% else %}
-      {{ (daily_mowing_minutes_needed | float(0) / 24 * debt_elapsed_hours | float(0)) | round(1) }}
+      {{ (daily_mowing_minutes_needed | float(0) / 24 * debt_elapsed_hours | float(0)) | round(3) }}
     {% endif %}
   debt_ready_threshold_minutes: >-
     {{ [calculated_session_minutes | float(30) * 0.8, min_session_minutes | float(30)] | max | round(0) }}
@@ -1853,8 +1881,9 @@ action:
           {% endfor %}
           Next {{ start_ts | timestamp_custom('%a %H:%M', true) }},
           {{ duration }}m; debt {{ updated_mowing_debt_minutes | int(0) }}m,
-          growth x{{ smart_growth_factor | float(1) | round(2) }};
-          {% if use_recent_rainfall_sensor | bool or use_recent_irrigation_sensor | bool %}water {{ recent_water_mm | float(0) | round(1) }}/{{ water_demand_mm | float(0) | round(1) }}mm;{% elif use_soil_moisture_sensor | bool %}soil {{ states(soil_moisture_sensor) | float(0) | round(0) }}%;{% else %}legacy moisture;{% endif %}
+          growth x{{ smart_growth_factor | float(1) | round(2) }}; budget {{ weekly_minutes_needed | int(0) }}m/wk;
+          {% if water_totals_incomplete | bool %}water incomplete: {{ 'soil' if use_soil_moisture_sensor | bool else 'fallback' }};{% elif use_water_totals_for_growth | bool %}water {{ recent_water_mm | float(0) | round(1) }}/{{ water_demand_mm | float(0) | round(1) }}mm;{% elif use_soil_moisture_sensor | bool %}soil {{ states(soil_moisture_sensor) | float(0) | round(0) }}%;{% else %}legacy moisture;{% endif %}
+          {% if irrigation_status_unavailable | bool %}irrigation status unavailable;{% endif %}
           {% if ns.times | count > 0 %}later {{ ns.times | join(', ') }}{% else %}no later slots{% endif %}{% if sessions > ((ns.times | count) + 1) %}, +{{ sessions - ((ns.times | count) + 1) }} more{% endif %}
         {% endif %}
 
