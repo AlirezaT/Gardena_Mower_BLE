@@ -69,8 +69,10 @@ updates to upstream main are not installed automatically.
 5. Restart Home Assistant.
 6. Add the integration from `Settings -> Devices & services`.
 
-For the 3.08 preview, enable beta versions in HACS and select `v3.08-beta.1`,
-then restart Home Assistant. Existing blueprint users must also re-import the
+For the stable 3.08 release, select `v3.08` in HACS and restart Home Assistant.
+Beta users can switch from `v3.08-beta.1` to this stable tag; the integration
+code and upstream dependency are unchanged. Existing blueprint users upgrading
+from 3.07.1 or earlier must also re-import the
 blueprint using the URL below and reload automations. Updating the integration
 does not update imported blueprints or flash ESPHome proxy firmware.
 
