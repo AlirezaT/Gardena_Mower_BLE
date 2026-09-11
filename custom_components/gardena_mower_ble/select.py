@@ -23,9 +23,9 @@ WIRE_OPTIONS_BY_ID = {
 WIRE_IDS_BY_OPTION = {value: key for key, value in WIRE_OPTIONS_BY_ID.items()}
 
 SENSOR_CONTROL_SENSITIVITY_OPTIONS_BY_ID = {
-    0: "Low",
-    1: "Medium",
-    2: "High",
+    1: "Low",
+    2: "Medium",
+    3: "High",
 }
 SENSOR_CONTROL_SENSITIVITY_IDS_BY_OPTION = {
     value: key for key, value in SENSOR_CONTROL_SENSITIVITY_OPTIONS_BY_ID.items()

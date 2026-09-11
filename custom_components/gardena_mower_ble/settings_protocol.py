@@ -1,4 +1,4 @@
-"""App-verified Eco/Frost mappings until corrected definitions ship upstream."""
+"""App-verified setting mappings until corrected definitions ship upstream."""
 
 from automower_ble.protocol import ResponseResult
 
@@ -22,12 +22,34 @@ def corrected_protocol(protocol):
             "minor": write,
             "requestType": {"enabled": "bool"},
         }
-    # 4476 is the app's lift-sensor group, not a frost-sensor fallback.
+    # ObstacleAvoidance is radar; MobileLoop is ZoneProtect, not radar.
+    result["GetAntiCollisionRadar"] = {
+        "major": 5356,
+        "minor": 7,
+        "responseType": {
+            "available": "bool",
+            "enabled": "bool",
+            "useAtBoundary": "bool",
+        },
+    }
+    result["SetAntiCollisionRadarEnabled"] = {
+        "major": 5356,
+        "minor": 3,
+        "requestType": {"enabled": "bool"},
+    }
+    result["GetZoneProtectSettings"] = {
+        "major": 6050,
+        "minor": 4,
+        "responseType": {"enabled": "uint8", "available": "bool"},
+    }
+    # Remove aliases that target unrelated settings or diagnostics.
     for name in (
         "GetFrostSensorEnabledLegacy",
         "SetFrostSensorEnabledLegacy",
         "GetChargingStationLoopSignalGeneration",
         "SetChargingStationLoopSignalGeneration",
+        "GenerateLoopSignalLegacy",  # Actually disables obstacle avoidance.
+        "GetSupportedAccessories",  # Actually front/rear collision status.
     ):
         result.pop(name, None)
     return result

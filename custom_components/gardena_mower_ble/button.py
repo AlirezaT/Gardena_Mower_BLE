@@ -41,9 +41,6 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.CONFIG,
         icon="mdi:sine-wave",
         command="GenerateLoopSignal",
-        fallback_commands=(
-            ("GenerateLoopSignalLegacy", {"signalType": 0}),
-        ),
     ),
     GardenaMowerBleCommandButtonEntityDescription(
         key="reset_cutting_blade_usage_time",

@@ -300,13 +300,6 @@ DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:home-message",
     ),
-    SensorEntityDescription(
-        key="supportedAccessories",
-        name="Supported Accessories",
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:puzzle",
-    ),
 
     # Statistics
     SensorEntityDescription(

@@ -21,7 +21,7 @@ communication.
 
 Mower communication is provided by the original
 [`alistair23/AutoMower-BLE`](https://github.com/alistair23/AutoMower-BLE)
-library, not a local fork or a PR branch. Version 3.08 pins upstream commit
+library, not a local fork or a PR branch. Version 3.90 retains upstream commit
 [`4bf4b009`](https://github.com/alistair23/AutoMower-BLE/commit/4bf4b00959f9ef712b5e1beebd725b0c75c80637),
 the latest upstream main revision checked on 2026-09-08. This includes the merged
 Gardena commands (PR #148), SILENO sense 600/650 model additions (PR #159), and
@@ -69,14 +69,47 @@ updates to upstream main are not installed automatically.
 5. Restart Home Assistant.
 6. Add the integration from `Settings -> Devices & services`.
 
-For the stable 3.08 release, select `v3.08` in HACS and restart Home Assistant.
-Beta users can switch from `v3.08-beta.1` to this stable tag; the integration
-code and upstream dependency are unchanged. Existing blueprint users upgrading
+For the stable 3.90 release, select `v3.90` in HACS and restart Home Assistant.
+The manifest version is exactly `3.90`; the matching GitHub/HACS tag is `v3.90`.
+Existing blueprint users upgrading
 from 3.07.1 or earlier must also re-import the
 blueprint using the URL below and reload automations. Updating the integration
 does not update imported blueprints or flash ESPHome proxy firmware.
 
-### Eco/Frost Testing Beta
+### Stable 3.90 — SILENO minimo settings corrections
+
+This release is scoped to the SILENO minimo, with app 9.2.0 and the owner's
+September 11 capture as protocol evidence. It does not claim completed support
+for every model or firmware.
+
+- Correct Eco/Frost command mappings from the tested beta.
+- SensorControl choices match the Minimo: Low=1, Medium=2, High=3.
+- Drive Past Wire: 20–35 cm; charging-station starting distance: 60–300 cm.
+- Separate radar from ZoneProtect and remove the invalid Supported Accessories
+  sensor, which was actually reading collision status.
+- Remove the unrelated radar-disable fallback from Generate Loop Signal.
+- Preserve the owner's tested SpotCut sequence, including its restore behavior.
+
+No mower settings are migrated or rewritten on upgrade. SpotCut, calendar,
+blueprint and proxy firmware behavior are unchanged. Review automations that
+select SensorControl by label: the same labels now send the correct app values.
+An old Supported Accessories entity may remain unavailable in HA's entity registry.
+
+Known inherited limitations: calendar read failures can look like an empty
+schedule, and editing a nonempty calendar while permanently parked can resume
+scheduling. Avoid calendar edits with an unreliable connection or while relying
+on permanent parking; use the official app for those edits until the follow-up.
+SpotCut restoration can reuse an expired duration or restore scheduled mowing as
+a manual override. The owner requested preserving the tested sequence for this
+release; that does not establish every restore edge case is correct.
+
+All model-dependent findings and remaining behavior work are retained in the
+[next-version checklist](docs/next-version-checklist.md), with the full
+[model audit](docs/model-dependency-audit.md) and
+[entity audit](docs/entity-protocol-audit.md). No blueprint re-import or firmware
+flash is needed when upgrading from 3.08 or the Eco/Frost beta.
+
+### Previous Eco/Frost Testing Beta
 
 `v3.9.0-beta.2` corrects the Eco Mode and Frost Sensor command mappings. Enable
 beta versions in HACS, select this tag, and restart Home Assistant. No blueprint

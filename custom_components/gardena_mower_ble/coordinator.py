@@ -69,7 +69,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._garage_setting_supported = True
         self._anti_collision_radar_supported = True
         self._eco_mode_supported = True
-        self._supported_accessories_supported = True
+        self._zone_protect_supported = True
         self._unsupported_static_commands: set[str] = set()
         self._static_data: dict[str, Any] = {}
         self._last_data: dict[str, Any] = {}
@@ -717,38 +717,24 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except (ValueError, IndexError) as err:
                     LOGGER.debug("Unable to read last mower message: %s", err)
 
-            if poll_diagnostics and self._supported_accessories_supported:
+            if poll_diagnostics and self._zone_protect_supported:
                 try:
-                    result, supported_accessories = await self.mower.command_response(
-                        "GetSupportedAccessories", warn_on_error=False
+                    result, zone_protect = await self.mower.command_response(
+                        "GetZoneProtectSettings", warn_on_error=False
                     )
-                    if (
-                        result is ResponseResult.OK
-                        and supported_accessories is not None
-                    ):
-                        data["supportedAccessories"] = supported_accessories
-                        data["garageSupported"] = bool(
-                            data.get("garageSupported")
-                            or supported_accessories & 1
+                    if result is ResponseResult.OK and isinstance(zone_protect, dict):
+                        data["zoneProtectSupported"] = setting_bool(
+                            zone_protect.get("available")
                         )
-                        data["zoneProtectSupported"] = bool(
-                            data.get("zoneProtectSupported")
-                            or supported_accessories & 2
-                        )
-                        LOGGER.debug(
-                            "SupportedAccessories: %s",
-                            supported_accessories,
-                        )
+                    elif result in UNSUPPORTED:
+                        self._zone_protect_supported = False
+                        data["zoneProtectSupported"] = None
                     else:
-                        self._supported_accessories_supported = False
-                        LOGGER.debug(
-                            "GetSupportedAccessories returned %s - disabling supported accessory polling",
-                            result.name,
-                        )
+                        data["zoneProtectSupported"] = None
                 except (KeyError, ValueError, IndexError):
-                    self._supported_accessories_supported = False
+                    data["zoneProtectSupported"] = None
                     LOGGER.debug(
-                        "GetSupportedAccessories failed - disabling supported accessory polling",
+                        "Unable to decode ZoneProtect settings",
                         exc_info=True,
                     )
 
