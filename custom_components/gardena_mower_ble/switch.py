@@ -90,9 +90,8 @@ DESCRIPTIONS = (
         name="Eco Mode",
         icon="mdi:leaf",
         entity_category=EntityCategory.CONFIG,
-        set_command="SetChargingStationLoopSignalGeneration",
+        set_command="SetEcoModeEnabled",
         value_parameter="enabled",
-        invert_value=True,
     ),
     *(
         GardenaMowerBleSwitchEntityDescription(
@@ -187,15 +186,19 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
         if description.starting_point_id is not None:
             request["startingPointId"] = description.starting_point_id
 
+        command = description.set_command
+        if description.key == "FrostSensorEnabled":
+            command = self.coordinator.data.get("FrostSensorSetCommand")
+            if command not in ("SetFrostSensorEnabled", "SetFrostSensorV1Enabled"):
+                raise HomeAssistantError("Frost sensor module has not been confirmed; refresh settings first")
+
         await self._async_setting_command_response(
-            description.set_command,
+            command,
             human_name=description.name or description.key,
             **request,
         )
 
         updates = {description.key: state_enabled}
-        if description.key == "EcoMode":
-            updates["ChargingStationLoopSignalGeneration"] = not state_enabled
         self.coordinator.update_cached_data(
             updates,
             recalculate_starting_point_share=description.key.startswith(

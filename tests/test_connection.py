@@ -2,16 +2,22 @@
 
 import asyncio
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from automower_ble.protocol import BLEClient, ResponseResult
 from bleak import BleakError
 
 _PATH = Path(__file__).parents[1] / "custom_components/gardena_mower_ble/connection.py"
-_SPEC = importlib.util.spec_from_file_location("gardena_connection", _PATH)
+_PACKAGE = ModuleType("gardena_connection_tests")
+_PACKAGE.__path__ = [str(_PATH.parent)]
+sys.modules[_PACKAGE.__name__] = _PACKAGE
+_SPEC = importlib.util.spec_from_file_location(
+    "gardena_connection_tests.connection", _PATH
+)
 _MODULE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODULE)
 Mower = _MODULE.Mower
@@ -147,8 +153,9 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
             self.ready()
             return ResponseResult.OK
 
-        with patch.object(BLEClient, "connect", connect), patch.object(
-            self.mower, "_ensure_keep_alive"
+        with (
+            patch.object(BLEClient, "connect", connect),
+            patch.object(self.mower, "_ensure_keep_alive"),
         ):
             await self.mower.connect(object())
         self.assertTrue(old_task.cancelled())

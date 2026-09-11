@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 from .connection import Mower
 from .const import DOMAIN, LOGGER
 from .duration import CONF_MANUAL_MOWING_DURATION, saved_duration, validate_duration
+from .settings_protocol import UNSUPPORTED, read_frost_setting, setting_bool
 
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
@@ -65,10 +66,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._orientation_diagnostics_supported = True
         self._sensor_control_supported = True
         self._frost_sensor_supported = True
-        self._frost_sensor_legacy_supported = True
         self._garage_setting_supported = True
         self._anti_collision_radar_supported = True
-        self._charging_station_loop_signal_supported = True
+        self._eco_mode_supported = True
         self._supported_accessories_supported = True
         self._unsupported_static_commands: set[str] = set()
         self._static_data: dict[str, Any] = {}
@@ -397,46 +397,12 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
             if poll_settings and self._frost_sensor_supported:
-                try:
-                    frost_sensor_result: ResponseResult | None = None
-                    frost_sensor_enabled = None
-                    frost_sensor_writable = False
-                    frost_commands = ["GetFrostSensorEnabled"]
-                    if self._frost_sensor_legacy_supported:
-                        frost_commands.append("GetFrostSensorEnabledLegacy")
-
-                    for command_name in frost_commands:
-                        result, value = await self.mower.command_response(
-                            command_name, warn_on_error=False
-                        )
-                        frost_sensor_result = result
-                        if result is ResponseResult.OK and value is not None:
-                            frost_sensor_enabled = value
-                            if command_name == "GetFrostSensorEnabled":
-                                frost_sensor_writable = True
-                                self._frost_sensor_legacy_supported = False
-                            break
-                        if command_name == "GetFrostSensorEnabledLegacy":
-                            self._frost_sensor_legacy_supported = False
-
-                    if frost_sensor_enabled is not None:
-                        data["FrostSensorEnabled"] = bool(frost_sensor_enabled)
-                        data["FrostSensorWritable"] = frost_sensor_writable
-                        LOGGER.debug("FrostSensorEnabled: %s", data["FrostSensorEnabled"])
-                    else:
-                        self._frost_sensor_supported = False
-                        LOGGER.debug(
-                            "GetFrostSensorEnabled returned %s - disabling frost sensor polling",
-                            frost_sensor_result.name
-                            if frost_sensor_result is not None
-                            else "no response",
-                        )
-                except (KeyError, ValueError, IndexError):
+                result, value, command = await read_frost_setting(self.mower)
+                data["FrostSensorEnabled"] = value
+                data["FrostSensorWritable"] = command is not None
+                data["FrostSensorSetCommand"] = command
+                if result in UNSUPPORTED:
                     self._frost_sensor_supported = False
-                    LOGGER.debug(
-                        "GetFrostSensorEnabled failed - disabling frost sensor polling",
-                        exc_info=True,
-                    )
 
             if poll_settings and self._garage_setting_supported:
                 try:
@@ -496,38 +462,13 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if poll_settings and self._charging_station_loop_signal_supported:
-                try:
-                    result, loop_signal_generation = await self.mower.command_response(
-                        "GetChargingStationLoopSignalGeneration",
-                        warn_on_error=False,
-                    )
-                    if (
-                        result is ResponseResult.OK
-                        and loop_signal_generation is not None
-                    ):
-                        data["ChargingStationLoopSignalGeneration"] = bool(
-                            loop_signal_generation
-                        )
-                        data["EcoMode"] = not data[
-                            "ChargingStationLoopSignalGeneration"
-                        ]
-                        LOGGER.debug(
-                            "ChargingStationLoopSignalGeneration: %s",
-                            data["ChargingStationLoopSignalGeneration"],
-                        )
-                    else:
-                        self._charging_station_loop_signal_supported = False
-                        LOGGER.debug(
-                            "GetChargingStationLoopSignalGeneration returned %s - disabling charging station loop signal polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._charging_station_loop_signal_supported = False
-                    LOGGER.debug(
-                        "GetChargingStationLoopSignalGeneration failed - disabling charging station loop signal polling",
-                        exc_info=True,
-                    )
+            if poll_settings and self._eco_mode_supported:
+                result, value = await self.mower.command_response(
+                    "GetEcoModeEnabled", warn_on_error=False,
+                )
+                data["EcoMode"] = setting_bool(value) if result is ResponseResult.OK else None
+                if result in UNSUPPORTED:
+                    self._eco_mode_supported = False
 
             if poll_settings and self._reversing_distance_supported:
                 try:

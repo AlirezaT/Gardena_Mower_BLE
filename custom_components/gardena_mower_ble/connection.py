@@ -8,6 +8,8 @@ from automower_ble.mower import Mower as UpstreamMower
 from automower_ble.protocol import ResponseResult
 from bleak import BleakError
 
+from .settings_protocol import corrected_protocol
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -46,6 +48,15 @@ class Mower(UpstreamMower):
         self.lock = _TaskLock()
         self._session_ready = False
         self._connecting_task = None
+        self._settings_protocol_corrected = False
+
+    async def get_protocol(self):
+        """Overlay only app-verified setting definitions for this mower."""
+        protocol = await super().get_protocol()
+        if not self._settings_protocol_corrected:
+            self.protocol = corrected_protocol(protocol)
+            self._settings_protocol_corrected = True
+        return self.protocol
 
     def is_connected(self):
         return self._session_ready and super().is_connected()

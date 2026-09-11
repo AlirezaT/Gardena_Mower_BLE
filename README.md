@@ -76,6 +76,26 @@ from 3.07.1 or earlier must also re-import the
 blueprint using the URL below and reload automations. Updating the integration
 does not update imported blueprints or flash ESPHome proxy firmware.
 
+### Eco/Frost Testing Beta
+
+`v3.09-beta.1` corrects the Eco Mode and Frost Sensor command mappings. Enable
+beta versions in HACS, select this tag, and restart Home Assistant. No blueprint
+re-import or proxy firmware update is needed. The upstream dependency is unchanged;
+the correction is a small instance-local protocol overlay, not a modified upstream
+installation. See [mapping details](docs/eco-frost-mapping-draft.md).
+
+Test while docked with mower-command automations disabled. Record both settings
+in the official app first. Close/disconnect the app before enabling the HA
+integration. Change one setting in HA, wait for a settings refresh, then disable
+the integration entry and reconnect the app to verify that only that setting
+changed. Repeat for the other setting and restore your desired values. HA weather
+and docking protections are unavailable while the integration is disabled.
+
+For rollback, select stable `v3.08` in HACS and restart HA. This restores the old
+code, including the known incorrect switch mappings; avoid these two HA controls
+after rollback. Firmware settings already changed are not rolled back—restore
+them explicitly in the official app. No automatic setting migration is performed.
+
 ### Manual
 
 1. Copy `custom_components/gardena_mower_ble` into your Home Assistant
