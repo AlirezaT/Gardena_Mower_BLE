@@ -76,6 +76,52 @@ from 3.07.1 or earlier must also re-import the
 blueprint using the URL below and reload automations. Updating the integration
 does not update imported blueprints or flash ESPHome proxy firmware.
 
+### Model-dependent settings prerelease — v3.92.0-beta.1
+
+Enable prereleases in HACS to test `v3.92.0-beta.1`. Its manifest is exactly
+`3.92.0-beta.1`, using HA-accepted semantic prerelease notation. Stable remains
+`v3.91`; the rejected `3.92-beta.1` notation is not used.
+
+This first beta implements the **verified model-dependent settings layer**, not
+the entire cross-model roadmap:
+
+| Family | Detected platform | Sensitivity choices | Starting points | Drive Past Wire | Station starting distance |
+|---|---|---|---|---|---|
+| SILENO city/life, ROB S, EasiLife | P0 / G3 | 3 | 3 | 20–40 cm | 20–300 cm |
+| SILENO minimo, EasiLife Go | P005 / G4 | 3 | 3 | 20–35 cm | 60–300 cm |
+| SILENO flex | P005GA / G4 | 5 | 5 | 20–35 cm | 60–300 cm |
+| Unverified identities, including P14 IDs | Unknown | Not enabled | Not enabled | Not enabled | Not enabled |
+
+- Numeric device identity, not a model-name string, selects capabilities.
+- Model Platform, Model Generation and Supported Starting Points diagnostics
+  expose the detected profile. Unknown devices do not automatically become P14.
+- Guide choices are filtered to the verified arrangement; no third-guide option
+  is offered for these families.
+- P0 Frost, ZoneProtect and CorridorCut select their app-specific firmware commands.
+  An unrecognized P0 version disables these controls rather than guessing. Reload
+  the integration after a mower firmware update or a failed identity read.
+- Starting points use individual G3 reads or combined G4 reads plus a separate
+  CorridorCut read. Flex exposes points 4/5; the station share includes all points
+  and remains unknown when a read is incomplete.
+- Garage/radar controls are platform-gated; ZoneProtect remains separate.
+  McCulloch's Frost UI exclusion is respected. Stale entities cannot bypass the
+  model restrictions through a service call.
+
+**Still pending:** verified P14 numeric IDs, G3 starting-point enable side effects
+(the G3 enable switches are intentionally not offered in this beta), full
+diagnostic/action/calendar model parity, and the existing calendar/SpotCut restore
+issues. The owner's Minimo SpotCut sequence is unchanged. See the
+[complete checklist](docs/next-version-checklist.md); unchecked items are not
+claimed implemented. Only the Minimo has the owner's physical test evidence.
+
+Restart HA after installation; first check the three model diagnostics and that
+Minimo still shows three sensitivity choices/points and a working ZoneProtect
+entity. Compare settings with the app while docked, disconnecting one BLE client
+before connecting the other. No mower commands are sent automatically to test
+movement, and installing does not migrate settings. No blueprint or proxy flash
+is needed. To roll back, select stable `v3.91` and restart HA; firmware settings
+changed manually while testing are not reverted by a software rollback.
+
 ### Stable 3.91 — restore the ZoneProtect switch
 
 Version 3.90 separated radar from ZoneProtect but omitted the replacement

@@ -31,6 +31,15 @@ SPOT_CUTTING_STATES = {
 
 DESCRIPTIONS = (
     SensorEntityDescription(
+        key="modelPlatform", name="Model Platform", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="modelGeneration", name="Model Generation", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="startingPointCount", name="Supported Starting Points", entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
         key="battery_level",
         name="Battery Level",
         state_class=SensorStateClass.MEASUREMENT,

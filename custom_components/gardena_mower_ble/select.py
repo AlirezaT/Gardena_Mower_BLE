@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.const import EntityCategory
@@ -23,9 +23,11 @@ WIRE_OPTIONS_BY_ID = {
 WIRE_IDS_BY_OPTION = {value: key for key, value in WIRE_OPTIONS_BY_ID.items()}
 
 SENSOR_CONTROL_SENSITIVITY_OPTIONS_BY_ID = {
+    0: "Very low",
     1: "Low",
     2: "Medium",
     3: "High",
+    4: "Very high",
 }
 SENSOR_CONTROL_SENSITIVITY_IDS_BY_OPTION = {
     value: key for key, value in SENSOR_CONTROL_SENSITIVITY_OPTIONS_BY_ID.items()
@@ -68,7 +70,7 @@ DESCRIPTIONS = (
             ids_by_option=WIRE_IDS_BY_OPTION,
             starting_point_id=starting_point_id,
         )
-        for starting_point_id in range(1, 4)
+        for starting_point_id in range(1, 6)
     ),
 )
 
@@ -81,9 +83,24 @@ async def async_setup_entry(
     """Set up Gardena Automower BLE select entities."""
     coordinator = entry.runtime_data
 
+    descriptions = []
+    for description in DESCRIPTIONS:
+        if description.starting_point_id is not None and description.starting_point_id > coordinator.capabilities.point_count:
+            continue
+        ids = (coordinator.capabilities.sensitivity_ids if description.key == "SensorControlSensitivity"
+               else coordinator.capabilities.wire_ids)
+        if not ids:
+            continue
+        options_by_id = {key: description.options_by_id[key] for key in ids}
+        descriptions.append(replace(
+            description, options_by_id=options_by_id,
+            ids_by_option={value: key for key, value in options_by_id.items()},
+            options=list(options_by_id.values()),
+        ))
+
     async_add_entities(
         GardenaMowerBleSelect(coordinator, description)
-        for description in DESCRIPTIONS
+        for description in descriptions
         if description.key in coordinator.data
     )
 

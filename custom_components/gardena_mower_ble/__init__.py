@@ -104,6 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
         LOGGER.debug("connected and paired")
 
         model = await mower.get_model()
+        await mower.initialize_capabilities()
         LOGGER.debug("Connected to Automower: %s", model)
 
         coordinator = GardenaCoordinator(hass, entry, mower, address, channel_id, model)

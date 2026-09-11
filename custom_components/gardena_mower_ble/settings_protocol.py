@@ -3,7 +3,7 @@
 from automower_ble.protocol import ResponseResult
 
 
-def corrected_protocol(protocol):
+def corrected_protocol(protocol, capabilities=None):
     """Return an instance-local copy; never patch the installed upstream package."""
     result = dict(protocol)
     for label, major in (
@@ -57,7 +57,48 @@ def corrected_protocol(protocol):
         "GetSupportedAccessories",  # Actually front/rear collision status.
     ):
         result.pop(name, None)
+    if capabilities is not None:
+        for label, minor, response_type in (
+            ("Enabled", 6, "bool"), ("Wire", 8, "uint8"),
+            ("Distance", 10, "uint16"), ("Proportion", 12, "uint8"),
+        ):
+            result[f"GetStartingPoint{label}"] = {
+                "major": 4706, "minor": minor,
+                "requestType": {"startingPointId": "uint8"}, "responseType": response_type,
+            }
+        if capabilities.zone_group is not None:
+            for name in ("GetZoneProtectSettings", "SetZoneProtectEnabled"):
+                result[name] = {**result[name], "major": capabilities.zone_group}
+        if capabilities.corridor_read is not None:
+            result["GetStartingPointCorridorCut"] = {
+                "major": 4706, "minor": capabilities.corridor_read,
+                "requestType": {"startingPointId": "uint8"}, "responseType": "bool",
+            }
+            result["SetStartingPointCorridorCut"] = {
+                "major": 4706, "minor": capabilities.corridor_read + 1,
+                "requestType": {"startingPointId": "uint8", "corridorCut": "bool"},
+            }
     return result
+
+
+async def read_starting_point(mower, point_id):
+    """Use G3 individual fields or G4 combined fields, with no write probing."""
+    if mower.capabilities.generation != 3:
+        return await mower.command_response(
+            "GetStartingPoint", warn_on_error=False, startingPointId=point_id
+        )
+    point = {}
+    for field in ("enabled", "proportion", "distance", "wire"):
+        result, value = await mower.command_response(
+            f"GetStartingPoint{field.title()}", warn_on_error=False,
+            startingPointId=point_id,
+        )
+        if result is not ResponseResult.OK:
+            return result, None
+        if value is None or (field == "enabled" and setting_bool(value) is None):
+            return ResponseResult.UNKNOWN_ERROR, None
+        point[field] = value
+    return ResponseResult.OK, point
 
 
 UNSUPPORTED = {
@@ -76,7 +117,14 @@ def setting_bool(value):
 
 async def read_frost_setting(mower):
     """Select a supported module using reads only; never probe by writing."""
-    for suffix in ("FrostSensor", "FrostSensorV1"):
+    suffixes = ("FrostSensor", "FrostSensorV1")
+    capabilities = getattr(mower, "capabilities", None)
+    if capabilities is not None:
+        suffix = {5370: "FrostSensor", 5412: "FrostSensorV1"}.get(capabilities.frost_group)
+        if suffix is None:
+            return ResponseResult.NOT_AVAILABLE, None, None
+        suffixes = (suffix,)
+    for suffix in suffixes:
         result, value = await mower.command_response(
             f"Get{suffix}Enabled",
             warn_on_error=False,

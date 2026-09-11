@@ -87,6 +87,12 @@ class GardenaMowerBleDescriptorEntity(GardenaMowerBleEntity):
         **kwargs: Any,
     ) -> tuple[ResponseResult, Any]:
         """Send an idempotent setting command with short BLE retries."""
+        capabilities = getattr(self.coordinator, "capabilities", None)
+        if capabilities is not None:
+            try:
+                capabilities.validate_setting(command_name, kwargs)
+            except ValueError as err:
+                raise HomeAssistantError(str(err)) from err
         last_result: ResponseResult | None = None
         last_error: Exception | None = None
 

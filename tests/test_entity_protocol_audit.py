@@ -51,7 +51,7 @@ class EntityProtocolAuditTests(unittest.IsolatedAsyncioTestCase):
         for name in base:
             self.assertNotIn(name, corrected)
 
-    def test_sensitivity_labels_match_minimo_app_choices(self):
+    def test_sensitivity_labels_match_shared_app_enum(self):
         tree = ast.parse((COMPONENT / "select.py").read_text())
         assignment = next(
             node
@@ -65,7 +65,7 @@ class EntityProtocolAuditTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             ast.literal_eval(assignment.value),
-            {1: "Low", 2: "Medium", 3: "High"},
+            {0: "Very low", 1: "Low", 2: "Medium", 3: "High", 4: "Very high"},
         )
 
     def test_minimo_distance_bounds_and_wire_scales(self):

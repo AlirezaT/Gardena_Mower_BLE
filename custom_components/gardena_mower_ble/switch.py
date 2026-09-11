@@ -112,7 +112,7 @@ DESCRIPTIONS = (
             starting_point_id=starting_point_id,
             value_parameter="enabled",
         )
-        for starting_point_id in range(1, 4)
+        for starting_point_id in range(1, 6)
     ),
     *(
         GardenaMowerBleSwitchEntityDescription(
@@ -124,7 +124,7 @@ DESCRIPTIONS = (
             starting_point_id=starting_point_id,
             value_parameter="corridorCut",
         )
-        for starting_point_id in range(1, 4)
+        for starting_point_id in range(1, 6)
     ),
 )
 
@@ -139,6 +139,21 @@ async def async_setup_entry(
 
     def should_create(description: SwitchEntityDescription) -> bool:
         """Return true if this switch is supported by the mower data."""
+        if isinstance(description, GardenaMowerBleSwitchEntityDescription):
+            capabilities = coordinator.capabilities
+            if description.starting_point_id is not None:
+                if description.starting_point_id > capabilities.point_count:
+                    return False
+                if description.set_command == "SetStartingPointEnabled" and capabilities.generation == 3:
+                    return False
+                if description.set_command == "SetStartingPointCorridorCut" and capabilities.corridor_read is None:
+                    return False
+            if description.key == "GarageEnabled" and not capabilities.garage:
+                return False
+            if description.key == "AntiCollisionRadarEnabled" and not capabilities.radar:
+                return False
+            if description.key == "ZoneProtectEnabled" and capabilities.zone_group is None:
+                return False
         if (
             description.key not in coordinator.data
             and description.key not in ALWAYS_CREATE_SWITCHES

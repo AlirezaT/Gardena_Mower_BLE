@@ -9,6 +9,7 @@ from automower_ble.protocol import ResponseResult
 from bleak import BleakError
 
 from .settings_protocol import corrected_protocol
+from .model_capabilities import ModelCapabilities, identify_model
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +50,18 @@ class Mower(UpstreamMower):
         self._session_ready = False
         self._connecting_task = None
         self._settings_protocol_corrected = False
+        self.capabilities = ModelCapabilities()
+
+    async def initialize_capabilities(self):
+        """Identify this session with reads only, before creating HA entities."""
+        identity = await self.command("GetModel")
+        firmware = await self.command("GetSwVersionStringAppl")
+        self.capabilities = identify_model(identity, firmware)
+        if self.capabilities.platform == "unknown":
+            _LOGGER.warning("Mower model identity is unknown; model-dependent settings are disabled")
+        elif self.capabilities.platform == "P0" and self.capabilities.firmware_pair is None:
+            _LOGGER.warning("P0 firmware version is unrecognized; firmware-dependent settings are disabled")
+        self.protocol = corrected_protocol(await self.get_protocol(), self.capabilities)
 
     async def get_protocol(self):
         """Overlay only app-verified setting definitions for this mower."""

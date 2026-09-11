@@ -17,7 +17,7 @@ from homeassistant.util import dt as dt_util
 from .connection import Mower
 from .const import DOMAIN, LOGGER
 from .duration import CONF_MANUAL_MOWING_DURATION, saved_duration, validate_duration
-from .settings_protocol import UNSUPPORTED, read_frost_setting, setting_bool
+from .settings_protocol import UNSUPPORTED, read_frost_setting, read_starting_point, setting_bool
 
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
@@ -55,9 +55,10 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.channel_id = channel_id
         self.model = model
         self.mower = mower
+        self.capabilities = mower.capabilities
         self._spot_cutting_status_supported = True
         self._reversing_distance_supported = True
-        self._starting_points_supported = True
+        self._starting_points_supported = self.capabilities.point_count > 0
         self._comboard_sensor_data_supported = True
         self._app_loop_signals_supported = True
         self._loop_signal_strength_supported = True
@@ -65,11 +66,11 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._battery_diagnostics_supported = True
         self._orientation_diagnostics_supported = True
         self._sensor_control_supported = True
-        self._frost_sensor_supported = True
-        self._garage_setting_supported = True
-        self._anti_collision_radar_supported = True
+        self._frost_sensor_supported = self.capabilities.frost_group is not None
+        self._garage_setting_supported = self.capabilities.garage
+        self._anti_collision_radar_supported = self.capabilities.radar
         self._eco_mode_supported = True
-        self._zone_protect_supported = True
+        self._zone_protect_supported = self.capabilities.zone_group is not None
         self._unsupported_static_commands: set[str] = set()
         self._static_data: dict[str, Any] = {}
         self._last_data: dict[str, Any] = {}
@@ -145,7 +146,11 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _update_starting_point_charging_station_share(data: dict[str, Any]) -> None:
         """Calculate the charging station share from starting point shares."""
         proportion_total = 0
-        for starting_point_id in range(1, 4):
+        data["StartingPointChargingStationProportion"] = None
+        count = data.get("startingPointCount", 3)
+        if not count:
+            return
+        for starting_point_id in range(1, count + 1):
             enabled = data.get(f"StartingPoint{starting_point_id}Enabled")
             if enabled is None:
                 return
@@ -322,6 +327,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             LOGGER.debug("RemainingChargingTime: " + str(data["RemainingChargingTime"]))
 
             await self._async_update_static_info(data)
+            data["modelPlatform"] = self.capabilities.platform
+            data["modelGeneration"] = self.capabilities.generation
+            data["startingPointCount"] = self.capabilities.point_count
 
             if poll_realtime and self._battery_diagnostics_supported:
                 try:
@@ -493,15 +501,15 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
             if poll_settings and self._starting_points_supported:
+                data["StartingPointChargingStationProportion"] = None
                 try:
                     starting_points_read = 0
                     enabled_starting_point_proportions = []
-                    for starting_point_id in range(1, 4):
-                        result, starting_point = await self.mower.command_response(
-                            "GetStartingPoint",
-                            warn_on_error=False,
-                            startingPointId=starting_point_id,
-                        )
+                    for point_id in range(1, self.capabilities.point_count + 1):
+                        for field in ("Enabled", "Proportion", "Wire", "Distance", "CorridorCut"):
+                            data[f"StartingPoint{point_id}{field}"] = None
+                    for starting_point_id in range(1, self.capabilities.point_count + 1):
+                        result, starting_point = await read_starting_point(self.mower, starting_point_id)
                         if result is not ResponseResult.OK or starting_point is None:
                             LOGGER.debug(
                                 "GetStartingPoint %s returned %s - stopping starting point polling",
@@ -511,14 +519,21 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             break
 
                         prefix = f"StartingPoint{starting_point_id}"
-                        enabled = bool(starting_point["enabled"])
+                        enabled = setting_bool(starting_point["enabled"])
+                        if enabled is None:
+                            break
                         data[f"{prefix}Enabled"] = enabled
                         data[f"{prefix}Proportion"] = starting_point["proportion"]
                         data[f"{prefix}Wire"] = starting_point["wire"]
                         data[f"{prefix}Distance"] = starting_point["distance"]
-                        data[f"{prefix}CorridorCut"] = bool(
-                            starting_point["corridorCut"]
-                        )
+                        data[f"{prefix}CorridorCut"] = None
+                        if self.capabilities.corridor_read is not None:
+                            corridor_result, corridor = await self.mower.command_response(
+                                "GetStartingPointCorridorCut", warn_on_error=False,
+                                startingPointId=starting_point_id,
+                            )
+                            if corridor_result is ResponseResult.OK:
+                                data[f"{prefix}CorridorCut"] = setting_bool(corridor)
                         if enabled:
                             enabled_starting_point_proportions.append(
                                 int(starting_point["proportion"])
@@ -526,12 +541,13 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         starting_points_read += 1
                         LOGGER.debug("%s: %s", prefix, starting_point)
 
-                    if starting_points_read:
+                    data["StartingPointChargingStationProportion"] = None
+                    if starting_points_read == self.capabilities.point_count:
                         data["StartingPointChargingStationProportion"] = max(
                             0,
                             100 - sum(enabled_starting_point_proportions),
                         )
-                    else:
+                    elif not starting_points_read and result in UNSUPPORTED:
                         self._starting_points_supported = False
                         LOGGER.debug(
                             "No starting points returned - disabling starting point polling"

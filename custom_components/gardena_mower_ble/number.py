@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.components.number import (
     NumberEntity,
@@ -91,7 +91,7 @@ DESCRIPTIONS = (
             value_parameter="distance",
             starting_point_id=starting_point_id,
         )
-        for starting_point_id in range(1, 4)
+        for starting_point_id in range(1, 6)
     ),
     *(
         GardenaMowerBleNumberEntityDescription(
@@ -108,7 +108,7 @@ DESCRIPTIONS = (
             value_parameter="proportion",
             starting_point_id=starting_point_id,
         )
-        for starting_point_id in range(1, 4)
+        for starting_point_id in range(1, 6)
     ),
 )
 
@@ -121,13 +121,25 @@ async def async_setup_entry(
     """Set up Gardena Automower BLE number entities."""
     coordinator = entry.runtime_data
 
+    descriptions = []
+    for description in DESCRIPTIONS:
+        if description.starting_point_id is not None and description.starting_point_id > coordinator.capabilities.point_count:
+            continue
+        if description.key in ("DrivePastWire", "ReversingDistance"):
+            bounds = (coordinator.capabilities.drive_bounds if description.key == "DrivePastWire"
+                      else coordinator.capabilities.reversing_bounds)
+            if bounds is None:
+                continue
+            description = replace(description, native_min_value=bounds[0], native_max_value=bounds[1])
+        descriptions.append(description)
+
     async_add_entities(
         (
             GardenaMowerBleManualDuration(coordinator, description)
             if description.key == "ManualMowingDuration"
             else GardenaMowerBleNumber(coordinator, description)
         )
-        for description in DESCRIPTIONS
+        for description in descriptions
         if description.key in coordinator.data
     )
 
@@ -158,6 +170,12 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
             description.value_parameter == "proportion"
             and description.starting_point_id is not None
         ):
+            if any(
+                self.coordinator.data.get(f"StartingPoint{point_id}Proportion") is None
+                for point_id in range(1, self.coordinator.capabilities.point_count + 1)
+                if point_id != description.starting_point_id
+            ):
+                raise HomeAssistantError("Refresh all starting point shares before changing a share")
             other_total = sum(
                 int(
                     self.coordinator.data.get(
@@ -165,7 +183,7 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
                     )
                     or 0
                 )
-                for starting_point_id in range(1, 4)
+                for starting_point_id in range(1, self.coordinator.capabilities.point_count + 1)
                 if starting_point_id != description.starting_point_id
             )
             if other_total + round(value) > 100:
