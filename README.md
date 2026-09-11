@@ -78,11 +78,15 @@ does not update imported blueprints or flash ESPHome proxy firmware.
 
 ### Eco/Frost Testing Beta
 
-`v3.09-beta.1` corrects the Eco Mode and Frost Sensor command mappings. Enable
+`v3.9.0-beta.2` corrects the Eco Mode and Frost Sensor command mappings. Enable
 beta versions in HACS, select this tag, and restart Home Assistant. No blueprint
 re-import or proxy firmware update is needed. The upstream dependency is unchanged;
 the correction is a small instance-local protocol overlay, not a modified upstream
 installation. See [mapping details](docs/eco-frost-mapping-draft.md).
+
+Do not install `v3.09-beta.1`: its manifest version was invalid and HA blocks it
+from loading. Beta 2 uses `3.9.0-beta.2` in the manifest and the matching
+`v3.9.0-beta.2` tag (standard semantic versioning).
 
 Test while docked with mower-command automations disabled. Record both settings
 in the official app first. Close/disconnect the app before enabling the HA

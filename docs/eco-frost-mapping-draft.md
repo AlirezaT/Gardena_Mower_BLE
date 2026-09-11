@@ -1,7 +1,11 @@
-# Eco Mode / Frost Sensor correction — v3.09-beta.1
+# Eco Mode / Frost Sensor correction — v3.9.0-beta.2
 
 Testing prerelease. No mower settings were changed during automated validation;
 physical app/HA comparison is still required.
+
+Beta 2 fixes the invalid `3.09b1` manifest from beta 1. Its valid semantic
+version `3.9.0-beta.2` matches the release tag apart from the `v` prefix.
+The mower-control code is unchanged from beta 1.
 
 The app's preserved 9.2.0 DEX constructors identify these commands:
 
