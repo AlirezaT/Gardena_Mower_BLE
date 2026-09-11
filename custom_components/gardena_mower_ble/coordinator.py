@@ -717,7 +717,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except (ValueError, IndexError) as err:
                     LOGGER.debug("Unable to read last mower message: %s", err)
 
-            if poll_diagnostics and self._zone_protect_supported:
+            if (poll_settings or poll_diagnostics) and self._zone_protect_supported:
+                data["ZoneProtectEnabled"] = None
                 try:
                     result, zone_protect = await self.mower.command_response(
                         "GetZoneProtectSettings", warn_on_error=False
@@ -726,6 +727,10 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data["zoneProtectSupported"] = setting_bool(
                             zone_protect.get("available")
                         )
+                        if data["zoneProtectSupported"] is True:
+                            data["ZoneProtectEnabled"] = setting_bool(
+                                zone_protect.get("enabled")
+                            )
                     elif result in UNSUPPORTED:
                         self._zone_protect_supported = False
                         data["zoneProtectSupported"] = None

@@ -77,6 +77,15 @@ DESCRIPTIONS = (
         value_parameter="enabled",
     ),
     GardenaMowerBleSwitchEntityDescription(
+        key="ZoneProtectEnabled",
+        name="ZoneProtect",
+        icon="mdi:shield-outline",
+        entity_category=EntityCategory.CONFIG,
+        set_command="SetZoneProtectEnabled",
+        value_parameter="enabled",
+        required_key="zoneProtectSupported",
+    ),
+    GardenaMowerBleSwitchEntityDescription(
         key="AntiCollisionRadarEnabled",
         name="Anti-collision Radar",
         icon="mdi:radar",
@@ -187,6 +196,11 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
             request["startingPointId"] = description.starting_point_id
 
         command = description.set_command
+        if description.key == "ZoneProtectEnabled":
+            if self.coordinator.data.get("zoneProtectSupported") is not True:
+                raise HomeAssistantError(
+                    "ZoneProtect availability has not been confirmed; refresh settings first"
+                )
         if description.key == "FrostSensorEnabled":
             command = self.coordinator.data.get("FrostSensorSetCommand")
             if command not in ("SetFrostSensorEnabled", "SetFrostSensorV1Enabled"):

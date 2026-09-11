@@ -42,6 +42,11 @@ def corrected_protocol(protocol):
         "minor": 4,
         "responseType": {"enabled": "uint8", "available": "bool"},
     }
+    result["SetZoneProtectEnabled"] = {
+        "major": 6050,
+        "minor": 3,
+        "requestType": {"enabled": "bool"},
+    }
     # Remove aliases that target unrelated settings or diagnostics.
     for name in (
         "GetFrostSensorEnabledLegacy",

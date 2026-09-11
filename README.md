@@ -69,12 +69,26 @@ updates to upstream main are not installed automatically.
 5. Restart Home Assistant.
 6. Add the integration from `Settings -> Devices & services`.
 
-For the stable 3.90 release, select `v3.90` in HACS and restart Home Assistant.
-The manifest version is exactly `3.90`; the matching GitHub/HACS tag is `v3.90`.
+For the stable 3.91 release, select `v3.91` in HACS and restart Home Assistant.
+The manifest version is exactly `3.91`; the matching GitHub/HACS tag is `v3.91`.
 Existing blueprint users upgrading
 from 3.07.1 or earlier must also re-import the
 blueprint using the URL below and reload automations. Updating the integration
 does not update imported blueprints or flash ESPHome proxy firmware.
+
+### Stable 3.91 — restore the ZoneProtect switch
+
+Version 3.90 separated radar from ZoneProtect but omitted the replacement
+ZoneProtect control. Version 3.91 restores a dedicated **ZoneProtect** switch,
+using the Minimo commands confirmed in the app capture (read 6050/4, write 6050/3).
+Availability and enabled state are separate; unavailable devices cannot be toggled.
+State is refreshed with settings after writes, not only with diagnostic polling.
+
+Upgrade in HACS and restart HA. If a dashboard or automation used the old
+mislabelled radar entity for ZoneProtect, select the new ZoneProtect entity instead.
+No settings are automatically changed and no firmware or blueprint update is needed.
+SpotCut and the upstream dependency are unchanged. The 3.90 limitations and
+cross-model follow-up below still apply.
 
 ### Stable 3.90 — SILENO minimo settings corrections
 

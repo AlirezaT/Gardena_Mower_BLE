@@ -194,9 +194,9 @@ class EntityProtocolAuditTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(len(blocks), 1)
         wrapper = ast.parse(
-            "async def poll(self):\n    data = {'garageSupported': True}\n    poll_diagnostics = True\n    return data\n"
+            "async def poll(self, poll_settings=True, poll_diagnostics=False):\n    data = {'garageSupported': True}\n    return data\n"
         )
-        wrapper.body[0].body[2:2] = blocks
+        wrapper.body[0].body[1:1] = blocks
         namespace = dict(vars(SETTINGS), LOGGER=logging.getLogger(__name__))
         exec(
             compile(ast.fix_missing_locations(wrapper), "coordinator.py", "exec"),
@@ -204,6 +204,8 @@ class EntityProtocolAuditTests(unittest.IsolatedAsyncioTestCase):
         )
         for result, value, expected, retryable in (
             (ResponseResult.OK, {"enabled": 0, "available": 1}, True, True),
+            (ResponseResult.OK, {"enabled": 1, "available": 1}, True, True),
+            (ResponseResult.OK, {"enabled": 2, "available": 1}, True, True),
             (ResponseResult.OK, {"enabled": 1, "available": 0}, False, True),
             (ResponseResult.OK, {"enabled": 1, "available": 3}, None, True),
             (ResponseResult.DEVICE_BUSY, None, None, True),
@@ -217,9 +219,76 @@ class EntityProtocolAuditTests(unittest.IsolatedAsyncioTestCase):
             )
             data = await namespace["poll"](coordinator)
             self.assertIs(data["zoneProtectSupported"], expected)
+            expected_enabled = (
+                SETTINGS.setting_bool(value["enabled"]) if expected is True else None
+            )
+            self.assertIs(data["ZoneProtectEnabled"], expected_enabled)
             self.assertTrue(data["garageSupported"])
             self.assertNotIn("supportedAccessories", data)
             self.assertEqual(coordinator._zone_protect_supported, retryable)
             coordinator.mower.command_response.assert_awaited_once_with(
                 "GetZoneProtectSettings", warn_on_error=False
             )
+
+    async def test_zone_switch_descriptor_and_writes(self):
+        tree = ast.parse((COMPONENT / "switch.py").read_text())
+        descriptor = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and any(
+                kw.arg == "key"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value == "ZoneProtectEnabled"
+                for kw in node.keywords
+            )
+        )
+        fields = {
+            kw.arg: ast.literal_eval(kw.value)
+            for kw in descriptor.keywords
+            if isinstance(kw.value, ast.Constant)
+        }
+        self.assertEqual(fields["name"], "ZoneProtect")
+        self.assertEqual(fields["required_key"], "zoneProtectSupported")
+        self.assertEqual(fields["set_command"], "SetZoneProtectEnabled")
+        setter = method(
+            "switch.py",
+            "GardenaMowerBleSwitch",
+            "_async_set_enabled",
+            {"HomeAssistantError": ValueError},
+        )
+        entity = SimpleNamespace(
+            entity_description=SimpleNamespace(
+                **fields, invert_value=False, starting_point_id=None
+            ),
+            coordinator=SimpleNamespace(
+                data={"zoneProtectSupported": True},
+                update_cached_data=Mock(),
+                schedule_settings_refresh=Mock(),
+            ),
+            _async_setting_command_response=AsyncMock(),
+        )
+        spec = SETTINGS.corrected_protocol({})["SetZoneProtectEnabled"]
+        self.assertEqual((spec["major"], spec["minor"]), (6050, 3))
+        for enabled in (True, False):
+            await setter(entity, enabled)
+            entity._async_setting_command_response.assert_awaited_with(
+                "SetZoneProtectEnabled", human_name="ZoneProtect", enabled=enabled
+            )
+            entity.coordinator.update_cached_data.assert_called_with(
+                {"ZoneProtectEnabled": enabled}, recalculate_starting_point_share=False
+            )
+            request = Command(1, spec).generate_request(enabled=enabled)
+            self.assertEqual(request[-3], int(enabled))
+        entity._async_setting_command_response.reset_mock()
+        for supported in (False, None):
+            entity.coordinator.data["zoneProtectSupported"] = supported
+            with self.assertRaises(ValueError):
+                await setter(entity, True)
+        entity._async_setting_command_response.assert_not_awaited()
+        entity.coordinator.data["zoneProtectSupported"] = True
+        entity.coordinator.update_cached_data.reset_mock()
+        entity._async_setting_command_response.side_effect = ValueError("rejected")
+        with self.assertRaises(ValueError):
+            await setter(entity, True)
+        entity.coordinator.update_cached_data.assert_not_called()
