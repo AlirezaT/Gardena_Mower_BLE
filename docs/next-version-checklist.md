@@ -145,7 +145,8 @@ Raw APKs, snoop logs, screenshots and device identifiers must remain private.
 - [x] Retain the original upstream library pin with narrow integration adapters.
 - [x] Recheck upstream main: still 4bf4b00959f9ef712b5e1beebd725b0c75c80637;
   tested immutable dependency unchanged. No unpinned automatic updates.
-- [ ] Validate HA's version parser, exact tag/manifest agreement and release archive.
+- [x] Validate HA's version parser, exact planned tag/manifest agreement and release
+  archive: `v3.92.0-beta.2` / `3.92.0-beta.2`; no raw captures, APKs or firmware.
 - [x] Review all 89 audit rows; see entity-implementation-review.md. This does not
   turn runtime-only support evidence into physical all-model validation.
 
