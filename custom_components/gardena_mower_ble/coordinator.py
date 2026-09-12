@@ -1,7 +1,7 @@
 """Provides the DataUpdateCoordinator."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from automower_ble.error_codes import ErrorCodes
@@ -15,9 +15,21 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .connection import Mower
+from .presentation import describe_error
+from .model_diagnostics import (
+    read_model_diagnostics,
+    read_statistics,
+    read_spot_status,
+    read_model_settings,
+)
 from .const import DOMAIN, LOGGER
 from .duration import CONF_MANUAL_MOWING_DURATION, saved_duration, validate_duration
-from .settings_protocol import UNSUPPORTED, read_frost_setting, read_starting_point, setting_bool
+from .settings_protocol import (
+    UNSUPPORTED,
+    read_frost_setting,
+    read_starting_point,
+    setting_bool,
+)
 
 if TYPE_CHECKING:
     from . import GardenaConfigEntry
@@ -56,19 +68,9 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.model = model
         self.mower = mower
         self.capabilities = mower.capabilities
-        self._spot_cutting_status_supported = True
-        self._reversing_distance_supported = True
         self._starting_points_supported = self.capabilities.point_count > 0
-        self._comboard_sensor_data_supported = True
-        self._app_loop_signals_supported = True
-        self._loop_signal_strength_supported = True
-        self._signal_quality_supported = True
-        self._battery_diagnostics_supported = True
-        self._orientation_diagnostics_supported = True
-        self._sensor_control_supported = True
+        self._unsupported_diagnostics = set()
         self._frost_sensor_supported = self.capabilities.frost_group is not None
-        self._garage_setting_supported = self.capabilities.garage
-        self._anti_collision_radar_supported = self.capabilities.radar
         self._eco_mode_supported = True
         self._zone_protect_supported = self.capabilities.zone_group is not None
         self._unsupported_static_commands: set[str] = set()
@@ -331,78 +333,17 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["modelGeneration"] = self.capabilities.generation
             data["startingPointCount"] = self.capabilities.point_count
 
-            if poll_realtime and self._battery_diagnostics_supported:
-                try:
-                    battery_diagnostics = {
-                        "batteryVoltage": "GetBatteryVoltage",
-                        "batteryCurrent": "GetBatteryCurrent",
-                        "batteryTemperature": "GetBatteryTemperature",
-                    }
-                    for key, command_name in battery_diagnostics.items():
-                        result, value = await self.mower.command_response(
-                            command_name, warn_on_error=False
-                        )
-                        if result is not ResponseResult.OK or value is None:
-                            self._battery_diagnostics_supported = False
-                            LOGGER.debug(
-                                "%s returned %s - disabling battery diagnostic polling",
-                                command_name,
-                                result.name,
-                            )
-                            break
-                        data[key] = value
-                    LOGGER.debug(
-                        "Battery diagnostics: voltage=%s current=%s temperature=%s",
-                        data.get("batteryVoltage"),
-                        data.get("batteryCurrent"),
-                        data.get("batteryTemperature"),
+            if poll_realtime:
+                data.update(
+                    await read_model_diagnostics(
+                        self.mower, self._unsupported_diagnostics
                     )
-                except (KeyError, ValueError, IndexError):
-                    self._battery_diagnostics_supported = False
-                    LOGGER.debug(
-                        "Battery diagnostics failed - disabling battery diagnostic polling",
-                        exc_info=True,
-                    )
+                )
 
             if poll_settings:
-                try:
-                    data["DrivePastWire"] = await self.mower.command("GetDrivePastWire")
-                    LOGGER.debug("DrivePastWire: " + str(data["DrivePastWire"]))
-                except KeyError:
-                    LOGGER.debug(
-                        "GetDrivePastWire not found in protocol.json - skipping"
-                    )
-
-            if poll_settings and self._sensor_control_supported:
-                try:
-                    sensor_control_commands = {
-                        "SensorControlEnabled": "GetSensorControlEnabled",
-                        "SensorControlSensitivity": "GetSensorControlSensitivity",
-                    }
-                    for key, command_name in sensor_control_commands.items():
-                        result, value = await self.mower.command_response(
-                            command_name, warn_on_error=False
-                        )
-                        if result is not ResponseResult.OK or value is None:
-                            self._sensor_control_supported = False
-                            LOGGER.debug(
-                                "%s returned %s - disabling SensorControl polling",
-                                command_name,
-                                result.name,
-                            )
-                            break
-                        data[key] = value
-                    LOGGER.debug(
-                        "SensorControl: enabled=%s sensitivity=%s",
-                        data.get("SensorControlEnabled"),
-                        data.get("SensorControlSensitivity"),
-                    )
-                except (KeyError, ValueError, IndexError):
-                    self._sensor_control_supported = False
-                    LOGGER.debug(
-                        "SensorControl polling failed - disabling SensorControl polling",
-                        exc_info=True,
-                    )
+                data.update(
+                    await read_model_settings(self.mower, self._unsupported_diagnostics)
+                )
 
             if poll_settings and self._frost_sensor_supported:
                 result, value, command = await read_frost_setting(self.mower)
@@ -412,93 +353,16 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if result in UNSUPPORTED:
                     self._frost_sensor_supported = False
 
-            if poll_settings and self._garage_setting_supported:
-                try:
-                    result, garage_enabled = await self.mower.command_response(
-                        "GetGarageEnabled", warn_on_error=False
-                    )
-                    if result is ResponseResult.OK and garage_enabled is not None:
-                        data["GarageEnabled"] = bool(garage_enabled)
-                        data["garageSupported"] = True
-                        LOGGER.debug("GarageEnabled: %s", data["GarageEnabled"])
-                    else:
-                        self._garage_setting_supported = False
-                        LOGGER.debug(
-                            "GetGarageEnabled returned %s - disabling garage polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._garage_setting_supported = False
-                    LOGGER.debug(
-                        "GetGarageEnabled failed - disabling garage polling",
-                        exc_info=True,
-                    )
-
-            if poll_settings and self._anti_collision_radar_supported:
-                try:
-                    result, anti_collision_radar = await self.mower.command_response(
-                        "GetAntiCollisionRadar", warn_on_error=False
-                    )
-                    if (
-                        result is ResponseResult.OK
-                        and anti_collision_radar is not None
-                    ):
-                        data["AntiCollisionRadarEnabled"] = bool(
-                            anti_collision_radar["enabled"]
-                        )
-                        data["AntiCollisionRadarAvailable"] = bool(
-                            anti_collision_radar["available"]
-                        )
-                        data["antiCollisionRadarSupported"] = data[
-                            "AntiCollisionRadarAvailable"
-                        ]
-                        LOGGER.debug(
-                            "AntiCollisionRadar: enabled=%s available=%s",
-                            data["AntiCollisionRadarEnabled"],
-                            data["AntiCollisionRadarAvailable"],
-                        )
-                    else:
-                        self._anti_collision_radar_supported = False
-                        LOGGER.debug(
-                            "GetAntiCollisionRadar returned %s - disabling Anti-collision Radar polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._anti_collision_radar_supported = False
-                    LOGGER.debug(
-                        "GetAntiCollisionRadar failed - disabling Anti-collision Radar polling",
-                        exc_info=True,
-                    )
-
             if poll_settings and self._eco_mode_supported:
                 result, value = await self.mower.command_response(
-                    "GetEcoModeEnabled", warn_on_error=False,
+                    "GetEcoModeEnabled",
+                    warn_on_error=False,
                 )
-                data["EcoMode"] = setting_bool(value) if result is ResponseResult.OK else None
+                data["EcoMode"] = (
+                    setting_bool(value) if result is ResponseResult.OK else None
+                )
                 if result in UNSUPPORTED:
                     self._eco_mode_supported = False
-
-            if poll_settings and self._reversing_distance_supported:
-                try:
-                    result, reversing_distance = await self.mower.command_response(
-                        "GetReversingDistance",
-                        warn_on_error=False,
-                    )
-                    if result is ResponseResult.OK and reversing_distance is not None:
-                        data["ReversingDistance"] = reversing_distance
-                        LOGGER.debug("ReversingDistance: %s", reversing_distance)
-                    else:
-                        self._reversing_distance_supported = False
-                        LOGGER.debug(
-                            "GetReversingDistance returned %s - disabling reversing distance polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._reversing_distance_supported = False
-                    LOGGER.debug(
-                        "GetReversingDistance failed - disabling reversing distance polling",
-                        exc_info=True,
-                    )
 
             if poll_settings and self._starting_points_supported:
                 data["StartingPointChargingStationProportion"] = None
@@ -506,10 +370,20 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     starting_points_read = 0
                     enabled_starting_point_proportions = []
                     for point_id in range(1, self.capabilities.point_count + 1):
-                        for field in ("Enabled", "Proportion", "Wire", "Distance", "CorridorCut"):
+                        for field in (
+                            "Enabled",
+                            "Proportion",
+                            "Wire",
+                            "Distance",
+                            "CorridorCut",
+                        ):
                             data[f"StartingPoint{point_id}{field}"] = None
-                    for starting_point_id in range(1, self.capabilities.point_count + 1):
-                        result, starting_point = await read_starting_point(self.mower, starting_point_id)
+                    for starting_point_id in range(
+                        1, self.capabilities.point_count + 1
+                    ):
+                        result, starting_point = await read_starting_point(
+                            self.mower, starting_point_id
+                        )
                         if result is not ResponseResult.OK or starting_point is None:
                             LOGGER.debug(
                                 "GetStartingPoint %s returned %s - stopping starting point polling",
@@ -528,8 +402,12 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data[f"{prefix}Distance"] = starting_point["distance"]
                         data[f"{prefix}CorridorCut"] = None
                         if self.capabilities.corridor_read is not None:
-                            corridor_result, corridor = await self.mower.command_response(
-                                "GetStartingPointCorridorCut", warn_on_error=False,
+                            (
+                                corridor_result,
+                                corridor,
+                            ) = await self.mower.command_response(
+                                "GetStartingPointCorridorCut",
+                                warn_on_error=False,
                                 startingPointId=starting_point_id,
                             )
                             if corridor_result is ResponseResult.OK:
@@ -559,167 +437,15 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         exc_info=True,
                     )
 
-            if self._spot_cutting_status_supported:
-                try:
-                    result, spot_cutting = await self.mower.command_response(
-                        "GetSpotCuttingState", warn_on_error=False
-                    )
-                    if result is ResponseResult.OK:
-                        data["spotCutting"] = spot_cutting
-                        LOGGER.debug("spotCutting: " + str(data["spotCutting"]))
-                    else:
-                        self._spot_cutting_status_supported = False
-                        LOGGER.debug(
-                            "GetSpotCuttingState returned %s - disabling spot cutting status polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._spot_cutting_status_supported = False
-                    LOGGER.debug(
-                        "GetSpotCuttingState failed - disabling spot cutting status polling",
-                        exc_info=True,
-                    )
-
-            if poll_realtime and self._comboard_sensor_data_supported:
-                try:
-                    result, sensor_data = await self.mower.command_response(
-                        "GetComboardSensorData", warn_on_error=False
-                    )
-                    if result is ResponseResult.OK and sensor_data is not None:
-                        data.update(sensor_data)
-                        LOGGER.debug("ComboardSensorData: %s", sensor_data)
-                    else:
-                        self._comboard_sensor_data_supported = False
-                        LOGGER.debug(
-                            "GetComboardSensorData returned %s - disabling realtime sensor polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._comboard_sensor_data_supported = False
-                    LOGGER.debug(
-                        "GetComboardSensorData failed - disabling realtime sensor polling",
-                        exc_info=True,
-                    )
-
-            if poll_realtime and self._loop_signal_strength_supported:
-                try:
-                    result, loop_signal_strength = await self.mower.command_response(
-                        "GetLoopSignalStrength",
-                        warn_on_error=False,
-                        signalType=0,
-                    )
-                    if result is ResponseResult.OK and loop_signal_strength is not None:
-                        data["loopSignalStrength"] = loop_signal_strength
-                        LOGGER.debug("LoopSignalStrength: %s", loop_signal_strength)
-                    else:
-                        self._loop_signal_strength_supported = False
-                        LOGGER.debug(
-                            "GetLoopSignalStrength returned %s - disabling app loop signal strength polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._loop_signal_strength_supported = False
-                    LOGGER.debug(
-                        "GetLoopSignalStrength failed - disabling app loop signal strength polling",
-                        exc_info=True,
-                    )
-
-            if poll_realtime and self._app_loop_signals_supported:
-                try:
-                    result, loop_signals = await self.mower.command_response(
-                        "GetLoopSignals",
-                        warn_on_error=False,
-                        signalType=0,
-                    )
-                    if result is ResponseResult.OK and loop_signals is not None:
-                        data.update(loop_signals)
-                        LOGGER.debug("LoopSignals: %s", loop_signals)
-                    else:
-                        self._app_loop_signals_supported = False
-                        LOGGER.debug(
-                            "GetLoopSignals returned %s - disabling app loop signal polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._app_loop_signals_supported = False
-                    LOGGER.debug(
-                        "GetLoopSignals failed - disabling app loop signal polling",
-                        exc_info=True,
-                    )
-
-            if (
-                poll_realtime
-                and self._signal_quality_supported
-                and "a0Signal" not in data
-            ):
-                try:
-                    result, signal_quality = await self.mower.command_response(
-                        "GetSignalQuality", warn_on_error=False
-                    )
-                    if result is ResponseResult.OK and signal_quality is not None:
-                        data.update(signal_quality)
-                        LOGGER.debug("SignalQuality: %s", signal_quality)
-                    else:
-                        self._signal_quality_supported = False
-                        LOGGER.debug(
-                            "GetSignalQuality returned %s - disabling signal quality polling",
-                            result.name,
-                        )
-                except (KeyError, ValueError, IndexError):
-                    self._signal_quality_supported = False
-                    LOGGER.debug(
-                        "GetSignalQuality failed - disabling signal quality polling",
-                        exc_info=True,
-                    )
-
-            if poll_realtime and self._orientation_diagnostics_supported:
-                try:
-                    orientation_diagnostics = {
-                        "orientationPitch": "GetOrientationPitch",
-                        "orientationRoll": "GetOrientationRoll",
-                    }
-                    for key, command_name in orientation_diagnostics.items():
-                        result, value = await self.mower.command_response(
-                            command_name, warn_on_error=False
-                        )
-                        if result is not ResponseResult.OK or value is None:
-                            self._orientation_diagnostics_supported = False
-                            LOGGER.debug(
-                                "%s returned %s - disabling orientation diagnostic polling",
-                                command_name,
-                                result.name,
-                            )
-                            break
-                        data[key] = value
-                    LOGGER.debug(
-                        "Orientation diagnostics: pitch=%s roll=%s",
-                        data.get("orientationPitch"),
-                        data.get("orientationRoll"),
-                    )
-                except (KeyError, ValueError, IndexError):
-                    self._orientation_diagnostics_supported = False
-                    LOGGER.debug(
-                        "Orientation diagnostics failed - disabling orientation diagnostic polling",
-                        exc_info=True,
-                    )
+            data["spotCutting"] = await read_spot_status(
+                self.mower, self._unsupported_diagnostics
+            )
 
             if poll_diagnostics:
-                # workaround for issue21
-                try:
-                    data["statistics"] = await self.mower.command("GetAllStatistics")
-                    LOGGER.debug("statuses: " + str(data["statistics"]))
-
-                    # Flatten statistics into top-level coordinator data
-                    if data["statistics"]:
-                        for key, value in data["statistics"].items():
-                            data[key] = value
-
-                except ValueError as e:
-                    if "Data length mismatch" in str(e):
-                        LOGGER.debug("Known fail on GetAllStatistics - skipping")
-                        data["statistics"] = None
-                    else:
-                        raise
+                data["statistics"] = await read_statistics(
+                    self.mower, self._unsupported_diagnostics
+                )
+                data.update(data["statistics"])
 
             data["operatorstate"] = await self.mower.command("IsOperatorLoggedIn")
             LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
@@ -804,24 +530,30 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     result, value = await self.mower.command_response(
                         command_name, warn_on_error=False
                     )
-                except (KeyError, ValueError, IndexError):
+                except KeyError:
                     self._unsupported_static_commands.add(command_name)
                     LOGGER.debug(
                         "%s failed - disabling static info polling", command_name
                     )
                     continue
 
+                except (ValueError, IndexError):
+                    LOGGER.debug("Unable to decode %s; will retry", command_name)
+                    continue
+
                 if result is not ResponseResult.OK or value is None:
-                    self._unsupported_static_commands.add(command_name)
+                    if result in UNSUPPORTED:
+                        self._unsupported_static_commands.add(command_name)
                     LOGGER.debug(
-                        "%s returned %s - disabling static info polling",
+                        "%s returned %s - skipping this static info read",
                         command_name,
                         result.name,
                     )
                     continue
 
                 if key == "productionTime":
-                    value = datetime.fromtimestamp(value, timezone.utc)
+                    if type(value) is not int or not 0 < value < 0xFFFFFFFF:
+                        continue
                 self._static_data[key] = value
                 break
 
@@ -850,14 +582,14 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             code = message.get("code")
             timestamp = message.get("time")
             time_text = (
-                datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
-                if isinstance(timestamp, int) and timestamp > 0
+                f"raw device timestamp {timestamp} (clock semantics unverified)"
+                if type(timestamp) is int and 0 < timestamp < 0xFFFFFFFF
                 else "unknown time"
             )
             LOGGER.info(
                 "Mower message %s: %s, code=%s, severity=%s, time=%s",
                 message_id,
-                self._describe_error_code(code),
+                describe_error(code, self.capabilities.platform),
                 code,
                 message.get("severity"),
                 time_text,

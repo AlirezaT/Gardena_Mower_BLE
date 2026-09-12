@@ -29,6 +29,28 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
+### Cross-model prerelease — v3.92.0-beta.2
+
+Beta.2 extends beta.1 with verified P14 identities, a P14 brand-confirmation
+option, generation-specific diagnostics/actions, starting-point behavior and safer
+calendar transactions. Point-distance limits now follow the app: P0 300 m,
+Minimo/P005 100 m, flex/P14 500 m. These changes are **not part of published beta.1**.
+See [implementation progress](docs/model-implementation-progress.md), the
+[89-entity review](docs/entity-implementation-review.md) and
+[remaining checklist items](docs/next-version-checklist.md).
+
+The tested Minimo SpotCut start/stop commands are preserved; restoration now avoids
+granting a fresh mowing allowance after an expired override. Next-start timestamps
+handle DST ambiguity conservatively; production/message timestamps remain explicitly
+raw where clock semantics are unverified. Loop generation distinguishes command
+acceptance from completion and reports timeout instead of assuming success.
+No blueprint re-import is required; mowing-demand calculations have not changed.
+
+Enable prereleases in HACS and select `v3.92.0-beta.2`, then restart Home Assistant.
+The manifest is exactly `3.92.0-beta.2`. Stable remains `v3.91`.
+Read the [beta.2 release notes](docs/release-3.92.0-beta.2.md) for limitations and
+safe testing guidance. Cross-model physical validation is not complete.
+
 ## Highlights
 
 - Local BLE connection, no cloud dependency.
@@ -76,9 +98,9 @@ from 3.07.1 or earlier must also re-import the
 blueprint using the URL below and reload automations. Updating the integration
 does not update imported blueprints or flash ESPHome proxy firmware.
 
-### Model-dependent settings prerelease — v3.92.0-beta.1
+### Historical first settings prerelease — v3.92.0-beta.1
 
-Enable prereleases in HACS to test `v3.92.0-beta.1`. Its manifest is exactly
+The first prerelease was `v3.92.0-beta.1`. Its manifest is exactly
 `3.92.0-beta.1`, using HA-accepted semantic prerelease notation. Stable remains
 `v3.91`; the rejected `3.92-beta.1` notation is not used.
 

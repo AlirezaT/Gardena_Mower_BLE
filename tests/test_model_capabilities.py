@@ -38,6 +38,22 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(caps.variant, variant)
             self.assertEqual(caps.sensitivity_ids, (1, 2, 3))
 
+    def test_starting_point_distance_editor_bounds_and_write_guard(self):
+        for device_type, maximum in ((14, 300), (29, 100), (43, 500), (34, 500)):
+            caps = model(device_type)
+            self.assertEqual(caps.point_distance_bounds, (1, maximum))
+            for value in (1, maximum):
+                caps.validate_setting(
+                    "SetStartingPointDistance",
+                    {"startingPointId": 1, "distance": value},
+                )
+            for value in (0, maximum + 1, True, 1.5):
+                with self.assertRaises(ValueError):
+                    caps.validate_setting(
+                        "SetStartingPointDistance",
+                        {"startingPointId": 1, "distance": value},
+                    )
+
     def test_unknown_is_not_p14(self):
         for identity in (
             None,
@@ -54,7 +70,55 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(caps.drive_bounds)
             self.assertEqual(caps.sensitivity_ids, ())
 
+    def test_p14_requires_verified_catalog_variant(self):
+        for device_type, variants in {
+            34: (1, 2, 4),
+            35: (1, 2, 3, 7, 8, 9),
+            36: (1,),
+            37: (1, 2, 3),
+        }.items():
+            for variant in variants:
+                caps = identify_model(
+                    {"deviceType": device_type, "deviceVariant": variant}
+                )
+                self.assertEqual(caps.platform, "P14")
+                self.assertEqual(caps.point_count, 5)
+                self.assertEqual(caps.drive_bounds, (25, 40))
+                self.assertTrue(caps.radar)
+                self.assertFalse(caps.garage)
+            self.assertEqual(
+                identify_model(
+                    {"deviceType": device_type, "deviceVariant": 255}
+                ).platform,
+                "unknown",
+            )
+
     def test_ranges_points_and_guides(self):
+        identity = {"deviceType": 34, "deviceVariant": 1}
+        for brand, wires in (
+            (None, ()),
+            ("unknown", ()),
+            ("gardena", (0, 1, 2, 3)),
+            ("flymo", (0, 1, 2)),
+        ):
+            caps = identify_model(identity, brand=brand)
+            self.assertEqual(caps.wire_ids, wires)
+            for wire in range(5):
+                if wire in wires:
+                    caps.validate_setting(
+                        "SetStartingPointWire", {"startingPointId": 1, "wire": wire}
+                    )
+                else:
+                    with self.assertRaises(ValueError):
+                        caps.validate_setting(
+                            "SetStartingPointWire", {"startingPointId": 1, "wire": wire}
+                        )
+        self.assertEqual(
+            identify_model(
+                {"deviceType": 99, "deviceVariant": 1}, brand="gardena"
+            ).wire_ids,
+            (),
+        )
         for device_type, count, drive, reverse, wires in (
             (14, 3, (20, 40), (20, 300), (2,)),
             (29, 3, (20, 35), (60, 300), (2,)),
@@ -120,10 +184,9 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
         for distance in (200, 350):
             caps.validate_setting("SetDrivePastWire", {"distance": distance})
         caps.validate_setting("SetZoneProtectEnabled", {"enabled": False})
-        with self.assertRaises(ValueError):
-            model(14).validate_setting(
-                "SetStartingPointEnabled", {"startingPointId": 1, "enabled": True}
-            )
+        model(14).validate_setting(
+            "SetStartingPointEnabled", {"startingPointId": 1, "enabled": True}
+        )
 
     async def test_frost_only_reads_selected_group(self):
         for device_type, version, command in (

@@ -125,6 +125,11 @@ async def async_setup_entry(
     for description in DESCRIPTIONS:
         if description.starting_point_id is not None and description.starting_point_id > coordinator.capabilities.point_count:
             continue
+        if description.starting_point_id is not None and description.value_parameter == "distance":
+            bounds = coordinator.capabilities.point_distance_bounds
+            if bounds is None:
+                continue
+            description = replace(description, native_min_value=bounds[0], native_max_value=bounds[1])
         if description.key in ("DrivePastWire", "ReversingDistance"):
             bounds = (coordinator.capabilities.drive_bounds if description.key == "DrivePastWire"
                       else coordinator.capabilities.reversing_bounds)

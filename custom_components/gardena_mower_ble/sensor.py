@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from automower_ble.error_codes import ErrorCodes
-
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -21,6 +19,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
 from .entity import GardenaMowerBleDescriptorEntity
+from .presentation import describe_error
 
 SPOT_CUTTING_STATES = {
     0: "not_active",
@@ -178,8 +177,7 @@ DESCRIPTIONS = (
     ),
     SensorEntityDescription(
         key="productionTime",
-        name="Production Time",
-        device_class=SensorDeviceClass.TIMESTAMP,
+        name="Production Time Raw",
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:factory",
     ),
@@ -222,6 +220,7 @@ DESCRIPTIONS = (
     SensorEntityDescription(
         key="pitch",
         name="Pitch",
+        native_unit_of_measurement="°",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:angle-acute",
@@ -229,6 +228,7 @@ DESCRIPTIONS = (
     SensorEntityDescription(
         key="roll",
         name="Roll",
+        native_unit_of_measurement="°",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:angle-acute",
@@ -245,6 +245,7 @@ DESCRIPTIONS = (
     SensorEntityDescription(
         key="orientationPitch",
         name="Orientation Pitch",
+        native_unit_of_measurement="°",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:angle-acute",
@@ -252,6 +253,7 @@ DESCRIPTIONS = (
     SensorEntityDescription(
         key="orientationRoll",
         name="Orientation Roll",
+        native_unit_of_measurement="°",
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:angle-acute",
@@ -407,7 +409,7 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
             error_code = self.coordinator.data.get("errorCode")
             if error_code is None:
                 return None
-            return _describe_error_code(error_code)
+            return describe_error(error_code, self.coordinator.capabilities.platform)
 
         value = self.coordinator.data.get(key)
 
@@ -417,8 +419,11 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
         if key == "spotCutting":
             return SPOT_CUTTING_STATES.get(value, f"unknown_{value}")
 
+        if key in ("pitch", "roll", "orientationPitch", "orientationRoll"):
+            return value / 10
+
         if key == "last_message":
-            return _format_message(value)
+            return _format_message(value, self.coordinator.capabilities.platform)
 
         if key == "cuttingBladeUsageTime":
             return round(value / 3600, 2)
@@ -435,6 +440,11 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str | int] | None:
         """Return extra attributes for structured message sensors."""
+        if self.entity_description.key == "productionTime":
+            return {"clock_semantics": "unverified; raw device timestamp"}
+        if self.entity_description.key == "errorDescription":
+            return {"model_platform": self.coordinator.capabilities.platform,
+                    "guidance": "Use the manufacturer app for model-specific troubleshooting"}
         if self.entity_description.key != "last_message":
             return None
 
@@ -443,23 +453,19 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
             return None
 
         attributes = dict(message)
+        attributes["clock_semantics"] = "unverified; time is the raw device timestamp"
         code = message.get("code")
         if isinstance(code, int):
-            attributes["description"] = _describe_error_code(code)
+            attributes["description"] = describe_error(code, self.coordinator.capabilities.platform)
         return attributes
 
 
 def _describe_error_code(error_code: int) -> str:
     """Return a readable mower error description."""
-    if error_code == 0:
-        return "No error"
-    try:
-        return ErrorCodes(error_code).name.replace("_", " ").title()
-    except ValueError:
-        return f"Unknown error ({error_code})"
+    return describe_error(error_code)
 
 
-def _format_message(message: object) -> str | None:
+def _format_message(message: object, platform=None) -> str | None:
     """Return a compact display value for a mower message."""
     if not isinstance(message, dict):
         return None
@@ -467,4 +473,4 @@ def _format_message(message: object) -> str | None:
     code = message.get("code")
     if not isinstance(code, int):
         return None
-    return _describe_error_code(code)
+    return describe_error(code, platform)

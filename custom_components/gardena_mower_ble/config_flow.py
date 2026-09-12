@@ -14,7 +14,13 @@ from gardena_bluetooth.parse import ProductType
 from gardena_bluetooth.scan import async_get_manufacturer_data
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfo
-from homeassistant.config_entries import SOURCE_BLUETOOTH, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_BLUETOOTH,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.const import CONF_ADDRESS, CONF_CLIENT_ID, CONF_PIN
 
 from .connection import Mower
@@ -79,10 +85,51 @@ def _exception_summary(exception: BaseException) -> str:
     return type(exception).__name__
 
 
+class GardenaModelOptionsFlow(OptionsFlow):
+    """Let an owner confirm app brand where P14 identity alone is insufficient."""
+
+    def __init__(self, config_entry):
+        self.current_entry = config_entry
+
+    async def async_step_init(self, user_input=None):
+        if user_input is not None:
+            selected = user_input.get("mower_brand", "unknown")
+            if selected not in ("unknown", "gardena", "flymo"):
+                raise ValueError("Unknown mower brand profile")
+            return self.async_create_entry(
+                title="",
+                data=dict(self.current_entry.options) | {"mower_brand": selected},
+            )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "mower_brand",
+                        default=self.current_entry.options.get(
+                            "mower_brand", "unknown"
+                        ),
+                    ): vol.In(
+                        {
+                            "unknown": "Unconfirmed (P14 guide selector disabled)",
+                            "gardena": "Gardena",
+                            "flymo": "Flymo",
+                        }
+                    )
+                }
+            ),
+        )
+
+
 class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Gardena Bluetooth."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return GardenaModelOptionsFlow(config_entry)
 
     address: str | None = None
     mower_name: str = ""
@@ -122,9 +169,9 @@ class GardenaMowerBleConfigFlow(ConfigFlow, domain=DOMAIN):
             return
 
         try:
-            manufacturer_data = (
-                await async_get_manufacturer_data({self.address})
-            ).get(self.address)
+            manufacturer_data = (await async_get_manufacturer_data({self.address})).get(
+                self.address
+            )
         except (KeyError, RuntimeError) as exception:
             LOGGER.debug(
                 "Unable to refresh mower advertisement data for %s: %s",

@@ -15,10 +15,20 @@ class ModelCapabilities:
     platform: str = "unknown"
     generation: int | None = None
     firmware: str | None = None
+    brand: str | None = None
+
+    @property
+    def schedule_limit(self):
+        return {3: 14, 4: 15}.get(self.generation)
 
     @property
     def point_count(self):
         return {"P0": 3, "P005": 3, "P005GA": 5, "P14": 5}.get(self.platform, 0)
+
+    @property
+    def point_distance_bounds(self):
+        maximum = {"P0": 300, "P005": 100, "P005GA": 500, "P14": 500}.get(self.platform)
+        return (1, maximum) if maximum is not None else None
 
     @property
     def sensitivity_ids(self):
@@ -34,7 +44,12 @@ class ModelCapabilities:
             return (2,)
         if self.platform == "P005GA":
             return (2, 3)
-        # P14 brand-specific wire selection is not enabled without verified identity.
+        if self.platform == "P14":
+            if self.brand == "gardena":
+                return (0, 1, 2, 3)
+            if self.brand == "flymo":
+                return (0, 1, 2)
+        # App selects P14 guides using the application brand, not platform alone.
         return ()
 
     @property
@@ -125,18 +140,26 @@ class ModelCapabilities:
             allowed = type(point_id) is int and 1 <= point_id <= self.point_count
             if command == "SetStartingPointWire":
                 allowed = allowed and values.get("wire") in self.wire_ids
+            if command == "SetStartingPointDistance":
+                bounds, distance = self.point_distance_bounds, values.get("distance")
+                allowed = (
+                    allowed
+                    and bounds is not None
+                    and type(distance) is int
+                    and bounds[0] <= distance <= bounds[1]
+                )
+            if command == "SetStartingPointProportion":
+                proportion = values.get("proportion")
+                allowed = allowed and type(proportion) is int and 0 <= proportion <= 100
             if command == "SetStartingPointCorridorCut":
                 allowed = allowed and self.corridor_read is not None
-            if command == "SetStartingPointEnabled" and self.generation == 3:
-                # G3 enable has additional app workflow side effects: not guessed.
-                allowed = False
         if not allowed:
             raise ValueError(
                 f"{command} is not confirmed for this model/firmware or value"
             )
 
 
-def identify_model(identity, firmware=None):
+def identify_model(identity, firmware=None, brand=None):
     if not isinstance(identity, dict):
         return ModelCapabilities()
     device_type, variant = identity.get("deviceType"), identity.get("deviceVariant")
@@ -151,5 +174,13 @@ def identify_model(identity, firmware=None):
         30: "P005",
         43: "P005GA",
     }.get(device_type, "unknown")
+    # Explicit accepted type/variant pairs from app MowerModelKt.mowerModel.
+    # Only these known catalog entries may reach the app's P14 default.
+    p14_variants = {34: (1, 2, 4), 35: (1, 2, 3, 7, 8, 9), 36: (1,), 37: (1, 2, 3)}
+    if variant in p14_variants.get(device_type, ()):
+        platform = "P14"
     generation = 3 if platform == "P0" else (4 if platform != "unknown" else None)
-    return ModelCapabilities(device_type, variant, platform, generation, firmware)
+    brand = brand if brand in ("gardena", "flymo") else None
+    return ModelCapabilities(
+        device_type, variant, platform, generation, firmware, brand
+    )

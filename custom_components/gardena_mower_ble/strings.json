@@ -51,6 +51,15 @@
       }
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Mower model profile",
+        "description": "For P14 models, confirm the brand shown on the mower before enabling guide choices. This does not change mower settings. Unknown models remain disabled. Other platforms retain their detected guide arrangement.",
+        "data": {"mower_brand": "Confirmed mower brand"}
+      }
+    }
+  },
   "exceptions": {
     "pin_required": {
       "message": "PIN is required for {domain_name}"

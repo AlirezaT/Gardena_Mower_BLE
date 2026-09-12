@@ -144,9 +144,11 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
                 self.coordinator.hass, self.coordinator.address, connectable=True
             )
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
-                return
+                raise HomeAssistantError("Unable to connect to mower")
         if self.coordinator.data.get("state") == MowerState.PAUSED:
-            await self.coordinator.mower.mower_resume()
+            result = await self.coordinator.mower.mower_resume()
+            if result is not ResponseResult.OK:
+                raise HomeAssistantError(f"Resume before docking failed: {result.name}")
             await asyncio.sleep(1)
 
         result = await self.coordinator.mower.mower_park()
@@ -173,9 +175,11 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
                 self.coordinator.hass, self.coordinator.address, connectable=True
             )
             if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
-                return
+                raise HomeAssistantError("Unable to connect to mower")
 
-        await self.coordinator.mower.mower_pause()
+        result, _ = await self.coordinator.mower.command_response("Pause")
+        if result is not ResponseResult.OK:
+            raise HomeAssistantError(f"Pause failed: {result.name}")
         self.coordinator.update_cached_data({"state": MowerState.PAUSED})
         self.coordinator.schedule_action_refresh()
 

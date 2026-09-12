@@ -7,7 +7,6 @@ import math
 import re
 from typing import Any
 
-from automower_ble.mower import MAX_SCHEDULE_TASKS
 from automower_ble.protocol import TaskInformation
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
@@ -116,13 +115,15 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
     async def async_create_event(self, **kwargs: Any) -> None:
         """Add a new weekly mowing schedule."""
         tasks = await self._async_get_tasks()
-        if len(tasks) >= MAX_SCHEDULE_TASKS:
+        limit = self.coordinator.capabilities.schedule_limit
+        if limit is None or len(tasks) >= limit:
             raise HomeAssistantError(
-                f"The mower supports a maximum of {MAX_SCHEDULE_TASKS} schedules"
+                f"Schedule capacity reached or model unknown (capacity: {limit})"
             )
 
+        expected = tuple(tasks)
         tasks.append(self._task_from_event(kwargs))
-        await self._async_set_tasks(tasks)
+        await self._async_set_tasks(tasks, expected=expected)
 
     async def async_delete_event(
         self,
@@ -136,8 +137,9 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         if task_index >= len(tasks):
             raise HomeAssistantError(f"Schedule {task_index + 1} does not exist")
 
+        expected = tuple(tasks)
         del tasks[task_index]
-        await self._async_set_tasks(tasks)
+        await self._async_set_tasks(tasks, expected=expected)
 
     async def async_update_event(
         self,
@@ -152,8 +154,9 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         if task_index >= len(tasks):
             raise HomeAssistantError(f"Schedule {task_index + 1} does not exist")
 
+        expected = tuple(tasks)
         tasks[task_index] = self._task_from_event(event, fallback=tasks[task_index])
-        await self._async_set_tasks(tasks)
+        await self._async_set_tasks(tasks, expected=expected)
 
     async def _async_get_tasks(self) -> list[TaskInformation]:
         """Fetch all tasks, reconnecting first if needed."""
@@ -165,13 +168,13 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         except Exception as err:
             raise HomeAssistantError(f"Unable to read mower schedule: {err}") from err
 
-    async def _async_set_tasks(self, tasks: list[TaskInformation]) -> None:
+    async def _async_set_tasks(self, tasks: list[TaskInformation], *, expected=None) -> None:
         """Write all tasks and refresh HA state."""
         if not self.coordinator.mower.is_connected():
             await self.coordinator._async_find_device()
 
         try:
-            await self.coordinator.mower.set_tasks(tasks)
+            await self.coordinator.mower.set_tasks(tasks, expected=expected)
         except Exception as err:
             raise HomeAssistantError(f"Unable to update mower schedule: {err}") from err
 
@@ -271,7 +274,10 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
             raise HomeAssistantError(f"Unknown mower schedule uid: {uid}")
 
         try:
-            return int(uid.removeprefix(UID_PREFIX))
+            index = int(uid.removeprefix(UID_PREFIX))
+            if index < 0:
+                raise ValueError("Negative schedule index")
+            return index
         except ValueError as err:
             raise HomeAssistantError(f"Unknown mower schedule uid: {uid}") from err
 

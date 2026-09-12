@@ -90,6 +90,13 @@ class GardenaMowerBleCommandButton(GardenaMowerBleDescriptorEntity, ButtonEntity
     async def async_press(self) -> None:
         """Send a one-shot mower command."""
         await self._async_ensure_connected()
+        if self.entity_description.command == "GenerateLoopSignal":
+            try:
+                await self.coordinator.mower.generate_loop_signal()
+            except (RuntimeError, ValueError) as err:
+                raise HomeAssistantError(str(err)) from err
+            await self.coordinator.async_request_refresh()
+            return
         result = await self._async_press_with_fallbacks()
         if result is not ResponseResult.OK:
             raise HomeAssistantError(

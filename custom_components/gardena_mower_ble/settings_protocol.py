@@ -6,6 +6,8 @@ from automower_ble.protocol import ResponseResult
 def corrected_protocol(protocol, capabilities=None):
     """Return an instance-local copy; never patch the installed upstream package."""
     result = dict(protocol)
+    result["GetSpotCutAvailable"] = {"major": 4710, "minor": 0, "responseType": "bool"}
+    result["AbortSpotCutting"] = {"major": 4710, "minor": 8}
     for label, major in (
         ("EcoMode", 4692),
         ("FrostSensor", 5370),
@@ -58,6 +60,19 @@ def corrected_protocol(protocol, capabilities=None):
     ):
         result.pop(name, None)
     if capabilities is not None:
+        if capabilities.generation == 4:
+            result["GetCollisionSensorStatus"] = {
+                "major": 4166, "minor": 8, "responseType": {"front": "bool", "rear": "bool"},
+            }
+            result["GetLiftSensorStatus"] = {"major": 4476, "minor": 6, "responseType": "bool"}
+        if capabilities.generation in (3, 4):
+            # App Calendar.AddTask is 8 time bytes + 7 weekday bools on both paths.
+            result["AddTask"] = {
+                "major": 4690, "minor": 7,
+                "requestType": {"start": "uint32", "duration": "uint32",
+                                **{f"useOn{day}": "bool" for day in (
+                                    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")}},
+            }
         for label, minor, response_type in (
             ("Enabled", 6, "bool"), ("Wire", 8, "uint8"),
             ("Distance", 10, "uint16"), ("Proportion", 12, "uint8"),
@@ -99,6 +114,28 @@ async def read_starting_point(mower, point_id):
             return ResponseResult.UNKNOWN_ERROR, None
         point[field] = value
     return ResponseResult.OK, point
+
+
+async def set_starting_point_enabled(mower, point_id, enabled):
+    """App G3/G4 workflow: disabling a point also clears its share."""
+    mower.capabilities.validate_setting("SetStartingPointEnabled", {"startingPointId": point_id, "enabled": enabled})
+    async with mower.lock:
+        commands = [("SetStartingPointEnabled", {"enabled": enabled})]
+        if not enabled:
+            commands.append(("SetStartingPointProportion", {"proportion": 0}))
+        commands.append(("SetStartingPointEnabled", {"enabled": enabled}))
+        for name, values in commands:
+            result, _ = await mower.command_response(name, startingPointId=point_id, **values)
+            if result is not ResponseResult.OK:
+                return result, None
+        result, point = await read_starting_point(mower, point_id)
+        if result is not ResponseResult.OK:
+            return result, None
+        if not isinstance(point, dict) or setting_bool(point.get("enabled")) is not enabled:
+            return ResponseResult.UNKNOWN_ERROR, None
+        if not enabled and point.get("proportion") != 0:
+            return ResponseResult.UNKNOWN_ERROR, None
+        return result, point
 
 
 UNSUPPORTED = {

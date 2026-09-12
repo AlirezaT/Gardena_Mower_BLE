@@ -22,6 +22,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
 from .entity import GardenaMowerBleDescriptorEntity
+from .settings_protocol import set_starting_point_enabled
 
 ALWAYS_CREATE_SWITCHES = {
     "EcoMode",
@@ -139,12 +140,13 @@ async def async_setup_entry(
 
     def should_create(description: SwitchEntityDescription) -> bool:
         """Return true if this switch is supported by the mower data."""
+        if description.key == "spotCutting" and coordinator.capabilities.platform not in ("P0", "P005"):
+            if coordinator.data.get("spotCutting") is None:
+                return False
         if isinstance(description, GardenaMowerBleSwitchEntityDescription):
             capabilities = coordinator.capabilities
             if description.starting_point_id is not None:
                 if description.starting_point_id > capabilities.point_count:
-                    return False
-                if description.set_command == "SetStartingPointEnabled" and capabilities.generation == 3:
                     return False
                 if description.set_command == "SetStartingPointCorridorCut" and capabilities.corridor_read is None:
                     return False
@@ -221,13 +223,26 @@ class GardenaMowerBleSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity):
             if command not in ("SetFrostSensorEnabled", "SetFrostSensorV1Enabled"):
                 raise HomeAssistantError("Frost sensor module has not been confirmed; refresh settings first")
 
-        await self._async_setting_command_response(
-            command,
-            human_name=description.name or description.key,
-            **request,
-        )
+        if command == "SetStartingPointEnabled":
+            await self._async_ensure_connected()
+            try:
+                result, _ = await set_starting_point_enabled(
+                    self.coordinator.mower, description.starting_point_id, state_enabled
+                )
+                if result is not ResponseResult.OK:
+                    raise HomeAssistantError(f"Starting point update/read-back failed: {result.name}")
+            finally:
+                self.coordinator.schedule_settings_refresh()
+        else:
+            await self._async_setting_command_response(
+                command,
+                human_name=description.name or description.key,
+                **request,
+            )
 
         updates = {description.key: state_enabled}
+        if command == "SetStartingPointEnabled" and not state_enabled:
+            updates[f"StartingPoint{description.starting_point_id}Proportion"] = 0
         self.coordinator.update_cached_data(
             updates,
             recalculate_starting_point_share=description.key.startswith(
@@ -264,6 +279,19 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
         await self._async_ensure_connected()
         if not self.is_on:
             self._spot_cut_restore_state = self._capture_restore_state()
+            override = self._spot_cut_restore_state.get("override") or {}
+            if override.get("action") is OverrideAction.FORCEDMOW:
+                # Compare device timestamps in their own clock domain, then use
+                # monotonic elapsed time so host timezone/DST cannot extend a run.
+                captured_at = time.monotonic()
+                result, mower_time = await self.coordinator.mower.command_response("GetTime")
+                start, duration = override.get("startTime"), override.get("duration")
+                if (result is ResponseResult.OK and type(mower_time) is int
+                    and type(start) is int and type(duration) is int
+                    and 0 < start <= mower_time and duration > 0):
+                    self._spot_cut_restore_state["override_deadline"] = captured_at + max(
+                        0, start + duration - mower_time
+                    )
 
         result = await self.coordinator.mower.mower_spot_cut()
         if result is not ResponseResult.OK:
@@ -311,7 +339,6 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
             result = await self.coordinator.mower.mower_park_permanently()
             if result is not ResponseResult.OK:
                 raise HomeAssistantError(f"Restore previous state failed: {result.name}")
-            await self.coordinator.mower.mower_resume()
             return {
                 "activity": MowerActivity.GOING_HOME,
                 "state": MowerState.IN_OPERATION,
@@ -322,13 +349,15 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
         if mower_state is MowerState.PAUSED or activity is MowerActivity.STOPPED_IN_GARDEN:
             return {"state": MowerState.PAUSED}
 
-        if activity in (
-            MowerActivity.MOWING,
-            MowerActivity.GOING_OUT,
-        ) or override.get("action") is OverrideAction.FORCEDMOW:
-            result = await self.coordinator.mower.mower_override(
-                self._restore_duration_hours(override)
-            )
+        if override.get("action") is OverrideAction.FORCEDMOW:
+            duration = self._restore_duration_hours(override)
+            if duration <= 0:
+                # Missing/expired timing is not permission for another full run.
+                result = await self.coordinator.mower.mower_park()
+                if result is not ResponseResult.OK:
+                    raise HomeAssistantError(f"Restore previous state failed: {result.name}")
+                return {"activity": MowerActivity.GOING_HOME}
+            result = await self.coordinator.mower.mower_override(duration)
             if result is not ResponseResult.OK:
                 raise HomeAssistantError(f"Restore previous state failed: {result.name}")
             return {
@@ -337,6 +366,17 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
                 "mode": ModeOfOperation.AUTO,
                 "permanentPark": False,
             }
+
+        if activity in (MowerActivity.MOWING, MowerActivity.GOING_OUT):
+            # Restore the planner, not a new manual mowing allowance. Deliberately
+            # leave physical activity to the next poll instead of claiming mowing.
+            result = await self.coordinator.mower.mower_resume_schedule()
+            if result is not ResponseResult.OK:
+                raise HomeAssistantError(f"Restore schedule failed: {result.name}")
+            result = await self.coordinator.mower.mower_resume()
+            if result is not ResponseResult.OK:
+                raise HomeAssistantError(f"Resume schedule failed: {result.name}")
+            return {"mode": ModeOfOperation.AUTO, "permanentPark": False}
 
         result = await self.coordinator.mower.mower_park()
         if result is not ResponseResult.OK:
@@ -348,17 +388,10 @@ class GardenaMowerBleSpotCutSwitch(GardenaMowerBleDescriptorEntity, SwitchEntity
 
     def _restore_duration_hours(self, override: dict) -> float:
         """Return remaining manual mowing duration from a previous override."""
-        duration = override.get("duration")
-        if not isinstance(duration, int) or duration <= 0:
-            return self.coordinator.manual_mowing_duration_hours
-
-        start_time = override.get("startTime")
-        if isinstance(start_time, int) and start_time > 0:
-            remaining = (start_time + duration) - int(time.time())
-            if remaining > 0:
-                duration = remaining
-
-        return max(1 / 60, duration / 3600)
+        deadline = (self._spot_cut_restore_state or {}).get("override_deadline")
+        if type(deadline) not in (int, float):
+            return 0
+        return max(0, deadline - time.monotonic()) / 3600
 
     async def _async_ensure_connected(self) -> None:
         """Connect to the mower if needed."""

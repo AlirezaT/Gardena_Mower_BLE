@@ -10,6 +10,10 @@ from bleak import BleakError
 
 from .settings_protocol import corrected_protocol
 from .model_capabilities import ModelCapabilities, identify_model
+from .schedule import ScheduleMixin
+from .actions import ActionMixin
+from .timestamps import local_timestamp
+from .events import EventMixin
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ class _TaskLock:
             self._lock.release()
 
 
-class Mower(UpstreamMower):
+class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
     """Use the upstream protocol with an atomic, fully initialized session."""
 
     def __init__(self, *args, **kwargs):
@@ -51,12 +55,15 @@ class Mower(UpstreamMower):
         self._connecting_task = None
         self._settings_protocol_corrected = False
         self.capabilities = ModelCapabilities()
+        self._event_frame_buffer = bytearray()
+        self._pairing_pending = False
+        self._pairing_result = None
 
-    async def initialize_capabilities(self):
+    async def initialize_capabilities(self, brand=None):
         """Identify this session with reads only, before creating HA entities."""
         identity = await self.command("GetModel")
         firmware = await self.command("GetSwVersionStringAppl")
-        self.capabilities = identify_model(identity, firmware)
+        self.capabilities = identify_model(identity, firmware, brand)
         if self.capabilities.platform == "unknown":
             _LOGGER.warning("Mower model identity is unknown; model-dependent settings are disabled")
         elif self.capabilities.platform == "P0" and self.capabilities.firmware_pair is None:
@@ -73,6 +80,10 @@ class Mower(UpstreamMower):
 
     def is_connected(self):
         return self._session_ready and super().is_connected()
+
+    async def mower_next_start_time(self, timezone=None):
+        value = await self.command("GetNextStartTime")
+        return local_timestamp(value, timezone)
 
     async def connect(self, device):
         async with self.lock:
@@ -99,6 +110,9 @@ class Mower(UpstreamMower):
                 self._connecting_task is not asyncio.current_task()
             ):
                 raise BleakError("Mower connection is not ready; reconnect required")
+            # The upstream request path flushes its queue. Match that for any
+            # coalesced bytes retained by the event-aware frame reader too.
+            self._event_frame_buffer.clear()
             result = await super()._request_response_locked(request_data)
             # Upstream consumes CancelledError; preserve HA timeouts/shutdown.
             if asyncio.current_task().cancelling():
@@ -118,6 +132,7 @@ class Mower(UpstreamMower):
     async def disconnect(self):
         async with self.lock:
             self._session_ready = False
+            self._event_frame_buffer.clear()
             self.keep_alive_event.set()
             task = self.task
             if task is not asyncio.current_task():

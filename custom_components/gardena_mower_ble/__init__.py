@@ -19,6 +19,7 @@ from homeassistant.exceptions import (
 from .connection import Mower
 from .const import DOMAIN, LOGGER
 from .coordinator import GardenaCoordinator
+from .presentation import model_label
 
 type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
@@ -104,13 +105,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
         LOGGER.debug("connected and paired")
 
         model = await mower.get_model()
-        await mower.initialize_capabilities()
+        await mower.initialize_capabilities(entry.options.get("mower_brand"))
+        model = model_label(model, mower.capabilities)
         LOGGER.debug("Connected to Automower: %s", model)
 
         coordinator = GardenaCoordinator(hass, entry, mower, address, channel_id, model)
 
         await coordinator.async_config_entry_first_refresh()
         entry.runtime_data = coordinator
+        entry.async_on_unload(entry.add_update_listener(_async_options_updated))
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         setup_complete = True
     except (TimeoutError, BleakError) as exception:
@@ -122,6 +125,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
             await mower.disconnect()
 
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: GardenaConfigEntry) -> None:
+    """Reload only on profile changes, not on manual-duration preference saves."""
+    selected = entry.options.get("mower_brand")
+    selected = selected if selected in ("gardena", "flymo") else None
+    if selected != entry.runtime_data.mower.capabilities.brand:
+        await hass.config_entries.async_reload(entry.entry_id)
 
 
 def _async_register_services(hass: HomeAssistant) -> None:
@@ -136,8 +147,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         if schedule_index < 0 or schedule_index >= len(tasks):
             raise HomeAssistantError(f"Schedule {call.data['index']} does not exist")
 
+        expected = tuple(tasks)
         del tasks[schedule_index]
-        await coordinator.mower.set_tasks(tasks)
+        await coordinator.mower.set_tasks(tasks, expected=expected)
         await coordinator.async_request_refresh()
 
     async def async_clear_schedule(call: ServiceCall) -> None:

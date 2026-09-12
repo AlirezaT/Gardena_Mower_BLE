@@ -1,3 +1,7 @@
+# Model-dependent integration profiles do not identify daily mowing allowances.
+# Keep area, effective capacity and operating-window inputs calibrated for the
+# exact mower variant. Rain/irrigation inputs affect this blueprint independently
+# of BLE entity availability. See docs/model-implementation-progress.md.
 blueprint:
   name: Smart dry-weather mowing
   description: >-
