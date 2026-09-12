@@ -1,5 +1,19 @@
 # Complete follow-up after Minimo stable 3.90
 
+## Current prerelease v3.92.0-beta.3
+
+See [closure review and acceptance procedures](checklist-acceptance.md).
+- [x] Hide legacy model-excluded entities without deleting history or user choices.
+- [x] Separate automatic-run duration from the manual preference; preserve the
+  accepted budget across restart and use it in blueprint run accounting.
+- [x] Add catalog/firmware/brand capability matrix and separate outbound checks.
+- [ ] Resolve historical raw pitch/roll statistics without a false unit relabel.
+- [ ] Install and physically validate the new duration/visibility changes.
+
+Current suite: **132 tests**. These additions are included in beta.3, not beta.2;
+the duration fix requires an integration update and blueprint re-import.
+No physical completion checks have been silently promoted to passing.
+
 ## Cross-model prerelease v3.92.0-beta.2
 
 Release decision, 2026-09-12: owner approved **v3.92.0-beta.2 with the remaining
@@ -133,8 +147,9 @@ Raw APKs, snoop logs, screenshots and device identifiers must remain private.
 
 ## Verification and release
 
-- [ ] Test each platform/firmware boundary, unknown identities and unavailable
-  features. Keep decoder and outbound-command regression coverage separate.
+- [x] Automated catalog/firmware-boundary matrix, unknown identities and unavailable
+  reads, with decoder and outbound-command coverage kept separate. Physical
+  platform/firmware certification remains under the next item, not implied here.
 - [ ] Physical tests only on available models, with explicit user coordination;
   do not remotely start a mower simply to validate a command.
 - [x] Update README and document draft scope/remaining work. No blueprint code

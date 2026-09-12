@@ -20,6 +20,7 @@ from .connection import Mower
 from .const import DOMAIN, LOGGER
 from .coordinator import GardenaCoordinator
 from .presentation import model_label
+from .entity_visibility import reconcile_model_visibility
 
 type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
@@ -115,6 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
         entry.runtime_data = coordinator
         entry.async_on_unload(entry.add_update_listener(_async_options_updated))
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        reconcile_model_visibility(hass, entry)
         setup_complete = True
     except (TimeoutError, BleakError) as exception:
         raise ConfigEntryNotReady(

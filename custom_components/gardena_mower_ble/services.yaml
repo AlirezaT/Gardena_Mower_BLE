@@ -1,3 +1,22 @@
+start_mowing_for:
+  name: Start mowing for a duration
+  description: Start a supervised or automation-requested run without changing the saved manual duration.
+  target:
+    entity:
+      domain: lawn_mower
+      integration: gardena_mower_ble
+  fields:
+    duration_hours:
+      name: Duration
+      required: true
+      selector:
+        number:
+          min: 0.5
+          max: 24
+          step: 0.5
+          unit_of_measurement: h
+          mode: box
+
 delete_schedule:
   name: Delete schedule
   description: Remove one weekly mowing schedule task from the mower.

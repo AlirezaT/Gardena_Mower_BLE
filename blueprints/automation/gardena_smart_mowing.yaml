@@ -1489,7 +1489,7 @@ action:
       - conditions: "{{ trigger.id == 'mowing_started' }}"
         sequence:
           - variables:
-              planned_minutes: "{{ (states(manual_duration_number) | float(calculated_session_hours | float(0)) * 60) | round(0) }}"
+              planned_minutes: "{{ (state_attr(mower_entity, 'last_start_duration_hours') | float(states(manual_duration_number) | float(calculated_session_hours | float(0))) * 60) | round(0) }}"
               cutting_start_should_reset: >-
                 {{ not use_cutting_time_sensor | bool
                    or stored_cutting_start_minutes | float(0) <= 0
@@ -1525,7 +1525,7 @@ action:
                 {% else %}
                   {{ ((ended_ts - started_ts) / 60) | round(0) }}
                 {% endif %}
-              planned_minutes: "{{ (states(manual_duration_number) | float(calculated_session_hours | float(0)) * 60) | round(0) }}"
+              planned_minutes: "{{ (state_attr(mower_entity, 'last_start_duration_hours') | float(states(manual_duration_number) | float(calculated_session_hours | float(0))) * 60) | round(0) }}"
               cutting_duration_minutes: "{{ active_cutting_minutes | float(0) | round(0) }}"
               duration_minutes: >-
                 {% if use_cutting_time_sensor | bool %}
@@ -1908,7 +1908,7 @@ action:
         sequence:
           - variables:
               started_ts: "{{ as_timestamp(states(current_mow_start_helper), none) }}"
-              planned_minutes: "{{ (states(manual_duration_number) | float(calculated_session_hours | float(0)) * 60) | round(0) }}"
+              planned_minutes: "{{ (state_attr(mower_entity, 'last_start_duration_hours') | float(states(manual_duration_number) | float(calculated_session_hours | float(0))) * 60) | round(0) }}"
               duration_minutes: >-
                 {% if use_cutting_time_sensor | bool %}
                   {{ active_cutting_minutes | float(0) | round(0) }}
@@ -2242,15 +2242,23 @@ action:
   - variables:
       auto_start_cutting_minutes: "{{ current_cutting_minutes | float(0) }}"
 
-  - action: number.set_value
-    target:
-      entity_id: !input manual_duration_number
-    data:
-      value: "{{ calculated_session_hours }}"
-
-  - action: lawn_mower.start_mowing
-    target:
-      entity_id: !input mower_entity
+  - choose:
+      - conditions: "{{ has_service('gardena_mower_ble', 'start_mowing_for') and mower_entity in integration_entities('gardena_mower_ble') }}"
+        sequence:
+          - action: gardena_mower_ble.start_mowing_for
+            target:
+              entity_id: !input mower_entity
+            data:
+              duration_hours: "{{ calculated_session_hours }}"
+    default:
+      - action: number.set_value
+        target:
+          entity_id: !input manual_duration_number
+        data:
+          value: "{{ calculated_session_hours }}"
+      - action: lawn_mower.start_mowing
+        target:
+          entity_id: !input mower_entity
 
   - delay:
       minutes: !input command_response_delay_minutes

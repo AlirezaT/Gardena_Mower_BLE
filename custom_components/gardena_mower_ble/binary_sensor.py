@@ -81,6 +81,7 @@ async def async_setup_entry(
         GardenaMowerBleBinarySensor(coordinator, description)
         for description in DESCRIPTIONS
         if description.key in coordinator.data
+        and not coordinator.capabilities.entity_is_model_excluded(description.key)
     )
 
 

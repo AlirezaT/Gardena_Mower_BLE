@@ -1,6 +1,7 @@
 """The Gardena Autoconnect Bluetooth lawn mower platform."""
 
 import asyncio
+import voluptuous as vol
 
 from automower_ble.protocol import (
     ModeOfOperation,
@@ -18,12 +19,14 @@ from homeassistant.components.lawn_mower import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers import entity_platform
 
 from . import GardenaConfigEntry
 from .const import LOGGER
 from .control import start_manual_mowing
 from .coordinator import GardenaCoordinator
 from .entity import GardenaMowerBleEntity
+from .duration import validate_duration
 
 
 async def async_setup_entry(
@@ -34,6 +37,12 @@ async def async_setup_entry(
     """Set up AutomowerLawnMower integration from a config entry."""
     coordinator = config_entry.runtime_data
     address = coordinator.address
+
+    entity_platform.async_get_current_platform().async_register_entity_service(
+        "start_mowing_for",
+        {vol.Required("duration_hours"): validate_duration},
+        "async_start_mowing",
+    )
 
     async_add_entities(
         [
@@ -110,18 +119,36 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         self._attr_available = self._attr_activity is not None
         super()._handle_coordinator_update()
 
-    async def async_start_mowing(self) -> None:
-        """Start mowing."""
+    @property
+    def extra_state_attributes(self):
+        """Retain the accepted run budget independently of the manual preference."""
+        return {
+            "last_start_duration_hours": self.coordinator.config_entry.options.get(
+                "last_start_duration_hours"
+            )
+        }
+
+    async def async_start_mowing(self, duration_hours=None) -> None:
+        """Start an explicit run, without overwriting the manual preference."""
         LOGGER.debug("Starting mower")
 
         try:
+            duration = validate_duration(
+                self.coordinator.manual_mowing_duration_hours
+                if duration_hours is None else duration_hours
+            )
             await start_manual_mowing(
                 self.coordinator.mower,
-                self.coordinator.manual_mowing_duration_hours,
+                duration,
                 self.coordinator._async_find_device,
             )
         except Exception as err:
             raise HomeAssistantError(str(err)) from err
+        self.coordinator.hass.config_entries.async_update_entry(
+            self.coordinator.config_entry,
+            options={**self.coordinator.config_entry.options,
+                     "last_start_duration_hours": duration},
+        )
         self.coordinator.update_cached_data(
             {
                 "activity": MowerActivity.MOWING,

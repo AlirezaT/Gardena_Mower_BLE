@@ -140,6 +140,8 @@ async def async_setup_entry(
 
     def should_create(description: SwitchEntityDescription) -> bool:
         """Return true if this switch is supported by the mower data."""
+        if coordinator.capabilities.entity_is_model_excluded(description.key):
+            return False
         if description.key == "spotCutting" and coordinator.capabilities.platform not in ("P0", "P005"):
             if coordinator.data.get("spotCutting") is None:
                 return False

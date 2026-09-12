@@ -29,7 +29,16 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Cross-model prerelease — v3.92.0-beta.2
+### Current prerelease — v3.92.0-beta.3
+
+Beta.3 adds unsupported-entity hiding and separates automatic-run duration from
+the manual preference. Select `v3.92.0-beta.3` in HACS, restart HA, then re-import
+the [beta.3 blueprint](https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/v3.92.0-beta.3/blueprints/automation/gardena_smart_mowing.yaml)
+and reload automations. Do not use the main-branch blueprint URL for this beta.
+Manifest: `3.92.0-beta.3`; stable remains `v3.91`.
+See [beta.3 release notes](docs/release-3.92.0-beta.3.md) for limitations and rollback.
+
+### Previous cross-model prerelease — v3.92.0-beta.2
 
 Beta.2 extends beta.1 with verified P14 identities, a P14 brand-confirmation
 option, generation-specific diagnostics/actions, starting-point behavior and safer
@@ -44,14 +53,46 @@ granting a fresh mowing allowance after an expired override. Next-start timestam
 handle DST ambiguity conservatively; production/message timestamps remain explicitly
 raw where clock semantics are unverified. Loop generation distinguishes command
 acceptance from completion and reports timeout instead of assuming success.
-No blueprint re-import is required; mowing-demand calculations have not changed.
+Beta.2 itself required no blueprint re-import; beta.3 does for the duration fix.
 
-Enable prereleases in HACS and select `v3.92.0-beta.2`, then restart Home Assistant.
-The manifest is exactly `3.92.0-beta.2`. Stable remains `v3.91`.
+The previous beta.2 manifest is exactly `3.92.0-beta.2`.
 Read the [beta.2 release notes](docs/release-3.92.0-beta.2.md) for limitations and
 safe testing guidance. Cross-model physical validation is not complete.
 
 ## Highlights
+
+### Beta.3: unsupported-entity visibility
+
+Beta.3 hides legacy entities excluded by a confirmed model profile,
+without deleting entity IDs/history or overriding user-hidden/disabled choices.
+New unsupported radar/garage diagnostics are also omitted. Registry reconciliation
+takes effect on integration setup; hidden entries remain accessible in entity management.
+
+| Profile | Model-excluded features hidden |
+|---|---|
+| Minimo/P005 and P0 | Radar control/availability, points 4–5, guide 2–3 signals |
+| flex/P005GA | Radar control/availability, guide 3 signal |
+| P14 | Garage control/support, guide 3 signal; Flymo also guide 2 signal |
+| Device type 22 | Frost control/status additionally excluded |
+
+Unknown identity or firmware and temporary BLE failures do not justify hiding an
+existing feature. P14 radar still requires the device's positive availability
+response before its control is created. Minimo retains ZoneProtect, Frost,
+Avoid Garage, SpotCut and normal collision detection (not radar).
+
+### General features
+
+Beta.3 duration fix: `gardena_mower_ble.start_mowing_for` accepts
+an entity target and `duration_hours` (0.5–24, half-hour steps) without changing
+Manual Mowing Duration. The mower's `last_start_duration_hours` attribute retains
+the accepted budget across restarts. Ordinary Start still uses the manual value.
+The updated blueprint selects this action for Gardena when available and retains
+its legacy path for other integrations/older releases. Install beta.3 and
+re-import its tagged blueprint together to get this fix.
+
+Historical pitch/roll statistics require care: pre-beta.2 samples are raw tenths
+of a degree. Do not merely relabel them as degrees in Developer Tools. See the
+[remaining acceptance checks](docs/checklist-acceptance.md) before changing history.
 
 - Local BLE connection, no cloud dependency.
 - Home Assistant lawn mower entity with start, pause, and dock.

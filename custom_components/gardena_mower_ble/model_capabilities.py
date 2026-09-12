@@ -107,6 +107,27 @@ class ModelCapabilities:
     def radar(self):
         return self.platform == "P14"
 
+    def entity_is_model_excluded(self, key):
+        """Only positive model evidence excludes entities, never missing BLE data."""
+        if self.platform == "unknown":
+            return False
+        if key in ("AntiCollisionRadarEnabled", "AntiCollisionRadarAvailable"):
+            return not self.radar
+        if key in ("GarageEnabled", "garageSupported"):
+            return not self.garage
+        if key == "FrostSensorEnabled":
+            return self.device_type == 22
+        point = re.fullmatch(r"StartingPoint(\d+)(Enabled|CorridorCut|Distance|Proportion|Wire)", key)
+        if point:
+            return int(point[1]) > self.point_count
+        if key == "guide3Signal":
+            return True  # No reviewed platform establishes a third guide.
+        if key == "guide2Signal":
+            return self.platform in ("P0", "P005") or (
+                self.platform == "P14" and self.brand == "flymo"
+            )
+        return False
+
     def validate_setting(self, command, values):
         """Enforce capability limits even for stale entities/service calls."""
         allowed = True
