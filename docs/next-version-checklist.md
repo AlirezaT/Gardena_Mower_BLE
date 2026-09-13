@@ -140,7 +140,9 @@ Raw APKs, snoop logs, screenshots and device identifiers must remain private.
   checked. Dock resume and schedule-resume failures now propagate too.
   Post-beta.4: ambiguous park trigger replies require fresh HOME/state/activity
   confirmation; see [reply fix evidence](permanent-park-reply-fix.md).
-  Physical confirmation of this correction remains pending.
+  Owner reported Minimo controls working on September 13; the 18:23–18:25
+  Start/Park test had no new control errors and SpotCut stayed off. Other-model
+  physical confirmation remains pending. Stable 3.92 promotes beta.5 unchanged.
 - [x] SpotCut G3 uses pause/AUTO/300-second override/14-20/start and 14-24 stop;
   other G4 uses pause/AUTO/4710-7/start and 4710-8 abort. Minimo/P005 retains the
   tested upstream sequence. P14/flex require positive 4710-0 availability.

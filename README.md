@@ -29,7 +29,20 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Current prerelease — v3.92.0-beta.5
+### Current stable release — v3.92
+
+Stable `v3.92` promotes beta.5 without runtime code changes. Manifest version:
+`3.92`. The owner confirmed the Minimo test; September 13 start/park telemetry
+shows controls taking effect, SpotCut remaining off and no new control errors
+during the test. **141 automated tests pass.** Other-model hardware validation
+and the remaining checklist items are not claimed complete.
+
+Install `v3.92` in HACS and restart Home Assistant. The corrected beta.4
+blueprint is unchanged: no re-import is needed if already installed. Otherwise
+import the [3.92 blueprint](https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/v3.92/blueprints/automation/gardena_smart_mowing.yaml).
+See [3.92 release notes](docs/release-3.92.md) for changes and limitations.
+
+### Previous prerelease — v3.92.0-beta.5
 
 Beta.5 fixes false permanent-park errors: an ambiguous StartTrigger reply is
 accepted only after fresh readings confirm HOME and a returning/parked/charging
@@ -52,7 +65,7 @@ Beta.4 includes beta.3's unsupported-entity hiding and separate automatic-run
 duration. Select `v3.92.0-beta.5` in HACS and restart HA. If not already updated, re-import
 the [beta.4 blueprint](https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/v3.92.0-beta.4/blueprints/automation/gardena_smart_mowing.yaml)
 and reload automations. Do not use the main-branch blueprint URL for this beta.
-Manifest: `3.92.0-beta.5`; stable remains `v3.91`. No blueprint change since beta.4.
+Historical beta manifest: `3.92.0-beta.5`. No blueprint change since beta.4.
 See [beta.4 release notes](docs/release-3.92.0-beta.4.md) for limitations and rollback.
 
 ### Previous cross-model prerelease — v3.92.0-beta.2
