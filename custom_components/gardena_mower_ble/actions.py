@@ -1,6 +1,11 @@
 """Serialized, result-checked model-dependent actions."""
 
-from automower_ble.protocol import ModeOfOperation, ResponseResult
+import asyncio
+import logging
+
+from automower_ble.protocol import ModeOfOperation, MowerActivity, MowerState, ResponseResult
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ActionMixin:
@@ -63,8 +68,33 @@ class ActionMixin:
         commands = [("SetMode", {"mode": ModeOfOperation.HOME})]
         if generation == 4:
             commands.append(("ClearOverride", {}))
-        commands.append(("StartTrigger", {}))
-        return await self._action_sequence(commands)
+        async with self.lock:
+            result = await self._action_sequence(commands)
+            if result is not ResponseResult.OK:
+                return result
+            result, _ = await self.command_response("StartTrigger", warn_on_error=False)
+            if result is ResponseResult.UNKNOWN_ERROR:
+                # Like upstream's mowing trigger handling, allow firmware time to
+                # settle. Never infer success from cached HOME or activity alone.
+                await asyncio.sleep(2)
+                readings = {}
+                for command in ("GetMode", "GetState", "GetActivity"):
+                    status, value = await self.command_response(command, warn_on_error=False)
+                    if status is not ResponseResult.OK:
+                        break
+                    readings[command] = value
+                if (
+                    readings.get("GetMode") == ModeOfOperation.HOME
+                    and readings.get("GetState") in (MowerState.IN_OPERATION, MowerState.RESTRICTED)
+                    and readings.get("GetActivity") in (
+                        MowerActivity.GOING_HOME, MowerActivity.PARKED, MowerActivity.CHARGING
+                    )
+                ):
+                    _LOGGER.debug("Permanent park confirmed by fresh readings after StartTrigger UNKNOWN_ERROR")
+                    return ResponseResult.OK
+            if result is not ResponseResult.OK:
+                _LOGGER.warning("Permanent park StartTrigger returned %s; success not confirmed", result.name)
+            return result
 
     async def mower_resume(self):
         return await self._action_sequence([("StartTrigger", {})])

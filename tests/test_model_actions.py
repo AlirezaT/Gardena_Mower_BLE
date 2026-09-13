@@ -26,8 +26,8 @@ class ActionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_park_sequence_per_generation(self):
         for device_type, expected in (
-            (14, ["SetMode", "StartTrigger"]),
-            (29, ["SetMode", "ClearOverride", "StartTrigger"]),
+            *((t, ["SetMode", "StartTrigger"]) for t in (14, 18, 22, 25)),
+            *((t, ["SetMode", "ClearOverride", "StartTrigger"]) for t in (29, 30, 34, 35, 36, 37, 43)),
             (99, []),
         ):
             mower = self.mower(device_type)
@@ -49,6 +49,44 @@ class ActionTests(unittest.IsolatedAsyncioTestCase):
                 await mower.mower_park_permanently(), ResponseResult.DEVICE_BUSY
             )
             self.assertEqual(mower.command_response.await_count, fail_at + 1)
+
+    async def test_park_unknown_reply_requires_fresh_confirmed_readings(self):
+        for device_type in (14, 18, 22, 25, 29, 30, 34, 35, 36, 37, 43):
+            for activity in (MowerActivity.GOING_HOME, MowerActivity.PARKED, MowerActivity.CHARGING):
+                mower = self.mower(device_type)
+                prefix = 1 if mower.capabilities.generation == 3 else 2
+                mower.command_response.side_effect = [(ResponseResult.OK, None)] * prefix + [
+                    (ResponseResult.UNKNOWN_ERROR, None),
+                    (ResponseResult.OK, ModeOfOperation.HOME),
+                    (ResponseResult.OK, MowerState.RESTRICTED),
+                    (ResponseResult.OK, activity),
+                ]
+                with patch("gardena_connection_tests.actions.asyncio.sleep", new_callable=AsyncMock):
+                    self.assertIs(await mower.mower_park_permanently(), ResponseResult.OK)
+                self.assertEqual([c.args[0] for c in mower.command_response.await_args_list][-3:],
+                                 ["GetMode", "GetState", "GetActivity"])
+
+    async def test_park_does_not_mask_unconfirmed_or_failed_readback(self):
+        valid = [(ResponseResult.OK, ModeOfOperation.HOME),
+                 (ResponseResult.OK, MowerState.RESTRICTED),
+                 (ResponseResult.OK, MowerActivity.PARKED)]
+        cases = []
+        for index, bad_values in enumerate(((ModeOfOperation.AUTO, None),
+                                           (MowerState.PAUSED, MowerState.ERROR, None),
+                                           (MowerActivity.MOWING, MowerActivity.STOPPED_IN_GARDEN, None))):
+            for value in bad_values:
+                readings = valid.copy()
+                readings[index] = (ResponseResult.OK, value)
+                cases.append(readings)
+            readings = valid.copy()
+            readings[index] = (ResponseResult.DEVICE_BUSY, valid[index][1])
+            cases.append(readings)
+        for readings in cases:
+            mower = self.mower(29)
+            mower.command_response.side_effect = [(ResponseResult.OK, None)] * 2 + [
+                (ResponseResult.UNKNOWN_ERROR, None), *readings]
+            with patch("gardena_connection_tests.actions.asyncio.sleep", new_callable=AsyncMock):
+                self.assertIs(await mower.mower_park_permanently(), ResponseResult.UNKNOWN_ERROR)
 
     async def test_resume_failures_propagate(self):
         mower = self.mower(29)
