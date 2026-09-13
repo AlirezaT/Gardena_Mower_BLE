@@ -29,14 +29,25 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Current prerelease — v3.92.0-beta.3
+### Current prerelease — v3.92.0-beta.4
 
-Beta.3 adds unsupported-entity hiding and separates automatic-run duration from
-the manual preference. Select `v3.92.0-beta.3` in HACS, restart HA, then re-import
-the [beta.3 blueprint](https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/v3.92.0-beta.3/blueprints/automation/gardena_smart_mowing.yaml)
+Beta.4 adds reviewed app error titles with model-aware human guidance,
+verified family-name fallbacks, explicit message date/time display attributes and
+an offline-copy orientation-statistics repair tool. See
+[implementation evidence](docs/app-presentation-review.md) and
+[repair precautions](docs/statistics-repair.md). The repair tool does not modify the live database.
+
+The beta.4 blueprint also fixes beta.3's invalid `has_service` template helper.
+It now detects the per-run action via integration membership and the mower's
+run-budget attribute. This corrected condition has been verified in running HA;
+the immutable beta.3 blueprint still contains the old condition.
+
+Beta.4 includes beta.3's unsupported-entity hiding and separate automatic-run
+duration. Select `v3.92.0-beta.4` in HACS, restart HA, then re-import
+the [beta.4 blueprint](https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/v3.92.0-beta.4/blueprints/automation/gardena_smart_mowing.yaml)
 and reload automations. Do not use the main-branch blueprint URL for this beta.
-Manifest: `3.92.0-beta.3`; stable remains `v3.91`.
-See [beta.3 release notes](docs/release-3.92.0-beta.3.md) for limitations and rollback.
+Manifest: `3.92.0-beta.4`; stable remains `v3.91`. **139 tests pass.**
+See [beta.4 release notes](docs/release-3.92.0-beta.4.md) for limitations and rollback.
 
 ### Previous cross-model prerelease — v3.92.0-beta.2
 
@@ -88,7 +99,7 @@ Manual Mowing Duration. The mower's `last_start_duration_hours` attribute retain
 the accepted budget across restarts. Ordinary Start still uses the manual value.
 The updated blueprint selects this action for Gardena when available and retains
 its legacy path for other integrations/older releases. Install beta.3 and
-re-import its tagged blueprint together to get this fix.
+re-import the corrected beta.4 blueprint together to get this fix.
 
 Historical pitch/roll statistics require care: pre-beta.2 samples are raw tenths
 of a degree. Do not merely relabel them as degrees in Developer Tools. See the

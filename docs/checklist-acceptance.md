@@ -1,9 +1,12 @@
 # Checklist closure review — September 12, 2026
 
-This accompanies beta.3, not an all-items-complete claim.
-Installed code, live blueprint, mower settings and recorder data were not changed.
+This accompanies beta.4, not an all-items-complete claim. The installed integration,
+mower settings and recorder data were not changed during release preparation.
+The live blueprint now uses the corrected duration-action/accounting path; see
+[current presentation review](app-presentation-review.md) for verification and
+[statistics repair](statistics-repair.md) for the prepared offline-copy tool.
 
-## Included in beta.3
+## Inherited from beta.3
 
 - Unsupported entity migration: hide legacy model-excluded entities, preserve
   IDs/history/user choices; suppress new unsupported diagnostics.
@@ -37,7 +40,8 @@ No proprietary source or raw captures are copied into this repository.
 - `ErrorDescriptionHelper` has separate title, body and hint paths; the body
   contains 2,651 DEX instructions and the hint 205. The reviewed short error-38
   correction does not establish full manufacturer troubleshooting-text parity.
-  Exhaustive mapping/review remains open, not a physical-test blocker.
+The beta.4 presentation review supersedes this earlier open mapping status:
+reviewed titles and independently worded model-aware guidance are now implemented.
 
 ## Required acceptance evidence
 
@@ -87,8 +91,8 @@ or silently rewrite old readings just to clear the warning. This item remains op
 
 ## What still prevents closing the whole checklist
 
-Full troubleshooting text/variant-name mapping, confirmed production/message
-clock semantics, orientation-history repair, live new-code acceptance and the
-physical tests above. The implementation/test additions are ready for review;
-beta.3 uses manifest `3.92.0-beta.3` and tag `v3.92.0-beta.3`.
+Literal app UI/localisation parity and unverified marketing capacities are not
+claimed. Absolute factory/event clock semantics, applying the orientation-history
+repair, live new-code acceptance and the physical tests above remain open.
+Beta.4 uses manifest `3.92.0-beta.4` and tag `v3.92.0-beta.4`.
 No existing release/tag is modified.

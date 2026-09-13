@@ -3,6 +3,24 @@
 from datetime import UTC, datetime
 
 
+def message_time_attributes(value, timezone):
+    """App date uses the local zone, but its time formatter explicitly uses UTC.
+
+    These are display fields, not a validated absolute event instant.
+    """
+    result = {"clock_semantics": "Raw device seconds; app time uses UTC formatting and app date uses local timezone; absolute event time unverified"}
+    if type(value) is not int or not 0 < value < 0xFFFFFFFF:
+        return result
+    try:
+        decoded = datetime.fromtimestamp(value, UTC)
+        result["app_time_24h"] = decoded.strftime("%H:%M")
+        if timezone is not None:
+            result["app_date"] = decoded.astimezone(timezone).date().isoformat()
+    except (ValueError, OverflowError, OSError):
+        pass
+    return result
+
+
 def local_timestamp(value, timezone):
     """Return a unique valid instant, or unknown for invalid/gap/fold values."""
     if type(value) is not int or not 0 < value < 0xFFFFFFFF or timezone is None:

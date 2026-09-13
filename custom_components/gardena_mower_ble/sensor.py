@@ -16,10 +16,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import GardenaConfigEntry
 from .entity import GardenaMowerBleDescriptorEntity
 from .presentation import describe_error
+from .error_help import error_guidance
+from .timestamps import message_time_attributes
 
 SPOT_CUTTING_STATES = {
     0: "not_active",
@@ -410,7 +413,7 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
             error_code = self.coordinator.data.get("errorCode")
             if error_code is None:
                 return None
-            return describe_error(error_code, self.coordinator.capabilities.platform)
+            return describe_error(error_code, self.coordinator.capabilities.platform, self.coordinator.capabilities)
 
         value = self.coordinator.data.get(key)
 
@@ -424,7 +427,7 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
             return value / 10
 
         if key == "last_message":
-            return _format_message(value, self.coordinator.capabilities.platform)
+            return _format_message(value, self.coordinator.capabilities.platform, self.coordinator.capabilities)
 
         if key == "cuttingBladeUsageTime":
             return round(value / 3600, 2)
@@ -439,13 +442,14 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
         return value
 
     @property
-    def extra_state_attributes(self) -> dict[str, str | int] | None:
+    def extra_state_attributes(self) -> dict[str, object] | None:
         """Return extra attributes for structured message sensors."""
         if self.entity_description.key == "productionTime":
             return {"clock_semantics": "unverified; raw device timestamp"}
         if self.entity_description.key == "errorDescription":
             return {"model_platform": self.coordinator.capabilities.platform,
-                    "guidance": "Use the manufacturer app for model-specific troubleshooting"}
+                    "guidance": error_guidance(self.coordinator.data.get("errorCode"), self.coordinator.capabilities),
+                    "guidance_source": "App 9.2.0 branch audit; independently worded, not automatic recovery"}
         if self.entity_description.key != "last_message":
             return None
 
@@ -454,10 +458,11 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
             return None
 
         attributes = dict(message)
-        attributes["clock_semantics"] = "unverified; time is the raw device timestamp"
+        attributes.update(message_time_attributes(message.get("time"), dt_util.get_time_zone(self.hass.config.time_zone)))
         code = message.get("code")
         if isinstance(code, int):
-            attributes["description"] = describe_error(code, self.coordinator.capabilities.platform)
+            attributes["description"] = describe_error(code, self.coordinator.capabilities.platform, self.coordinator.capabilities)
+            attributes["guidance"] = error_guidance(code, self.coordinator.capabilities)
         return attributes
 
 
@@ -466,7 +471,7 @@ def _describe_error_code(error_code: int) -> str:
     return describe_error(error_code)
 
 
-def _format_message(message: object, platform=None) -> str | None:
+def _format_message(message: object, platform=None, capabilities=None) -> str | None:
     """Return a compact display value for a mower message."""
     if not isinstance(message, dict):
         return None
@@ -474,4 +479,4 @@ def _format_message(message: object, platform=None) -> str | None:
     code = message.get("code")
     if not isinstance(code, int):
         return None
-    return describe_error(code, platform)
+    return describe_error(code, platform, capabilities)

@@ -1,6 +1,28 @@
 # Complete follow-up after Minimo stable 3.90
 
-## Current prerelease v3.92.0-beta.3
+## Current prerelease v3.92.0-beta.4 — September 13
+
+- [x] Apply the released beta.3 duration action/accounting to the live blueprint,
+  preserve inputs, back up the previous file, check configuration and reload automations.
+- [x] Fix beta.3's invalid `has_service` template helper; verify the corrected
+  attribute-presence condition in running HA and reload with no active mowing run.
+- [x] Implement the reviewed 97-code app title catalog and independently worded
+  help, including generation/guide branches and explicit unknown-code fallback.
+- [x] Implement verified family-name fallback while preserving upstream variant names.
+- [x] Trace message-history date/time formatters and expose their distinct app display
+  fields without inventing an absolute event time; retain raw production time.
+- [x] Implement and test source-preserving orientation-statistics migration tooling;
+  verify a local cutoff with zero ambiguous buckets in the read-only dry run.
+- [ ] Perform a stopped-HA recorder migration/restore in an agreed maintenance window.
+- [ ] Physically validate automatic-run accounting, parked calendar edits, loop
+  completion events and other-model behavior. No movement test was run remotely.
+
+See [presentation evidence](app-presentation-review.md) and
+[statistics repair](statistics-repair.md). These changes are included in beta.4;
+literal UI/localisation parity and unverified factory-clock semantics are not claimed.
+Current suite: **139 tests pass**, with scoped lint/compilation checks.
+
+## Previous prerelease v3.92.0-beta.3
 
 See [closure review and acceptance procedures](checklist-acceptance.md).
 - [x] Hide legacy model-excluded entities without deleting history or user choices.
@@ -10,7 +32,7 @@ See [closure review and acceptance procedures](checklist-acceptance.md).
 - [ ] Resolve historical raw pitch/roll statistics without a false unit relabel.
 - [ ] Install and physically validate the new duration/visibility changes.
 
-Current suite: **132 tests**. These additions are included in beta.3, not beta.2;
+Beta.3 suite: **132 tests**. These additions are included in beta.3, not beta.2;
 the duration fix requires an integration update and blueprint re-import.
 No physical completion checks have been silently promoted to passing.
 

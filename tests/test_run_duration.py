@@ -45,14 +45,14 @@ class RunDurationTests(unittest.IsolatedAsyncioTestCase):
 
     def test_blueprint_service_branch_never_writes_manual_number(self):
         branch = next(step for step in BLUEPRINT["action"] if any(
-            "start_mowing_for" in choice.get("conditions", "")
+            "last_start_duration_hours" in choice.get("conditions", "")
             for choice in step.get("choose", [])))
         self.assertEqual(branch["choose"][0]["sequence"][0]["action"], "gardena_mower_ble.start_mowing_for")
         self.assertEqual(len(branch["choose"][0]["sequence"]), 1)
         self.assertEqual([s["action"] for s in branch["default"]], ["number.set_value", "lawn_mower.start_mowing"])
         template = NativeEnvironment().from_string(branch["choose"][0]["conditions"])
-        for service, ours, expected in ((True, True, True), (False, True, False), (True, False, False)):
-            result = template.render(has_service=lambda *a: service,
+        for supported, ours, expected in ((True, True, True), (False, True, False), (True, False, False)):
+            result = template.render(states={"lawn_mower.test": SimpleNamespace(attributes={"last_start_duration_hours": None} if supported else {})},
                                      integration_entities=lambda *a: ["lawn_mower.test"] if ours else [],
                                      mower_entity="lawn_mower.test")
             self.assertEqual(result, expected)

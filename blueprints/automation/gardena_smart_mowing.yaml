@@ -10,7 +10,7 @@ blueprint:
     the grass should be dry enough. Designed for Gardena Mower BLE, but generic
     enough for any lawn_mower entity with a manual duration number.
   domain: automation
-  source_url: https://github.com/AlirezaT/Gardena_Mower_BLE/blob/main/blueprints/automation/gardena_smart_mowing.yaml
+  source_url: https://github.com/AlirezaT/Gardena_Mower_BLE/blob/v3.92.0-beta.4/blueprints/automation/gardena_smart_mowing.yaml
   input:
     mower_entity:
       name: Mower
@@ -2243,7 +2243,7 @@ action:
       auto_start_cutting_minutes: "{{ current_cutting_minutes | float(0) }}"
 
   - choose:
-      - conditions: "{{ has_service('gardena_mower_ble', 'start_mowing_for') and mower_entity in integration_entities('gardena_mower_ble') }}"
+      - conditions: "{{ mower_entity in integration_entities('gardena_mower_ble') and states[mower_entity] is not none and 'last_start_duration_hours' in states[mower_entity].attributes }}"
         sequence:
           - action: gardena_mower_ble.start_mowing_for
             target:
