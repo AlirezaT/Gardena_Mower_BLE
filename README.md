@@ -29,6 +29,30 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
+## Dashboard card
+
+The companion [Gardena Mower Card](https://github.com/AlirezaT/gardena-mower-card)
+brings animated mower status, battery and next-start information, Spot Cut and
+parking controls, inline settings, lawn coverage, schedule access and grouped
+diagnostics to your Home Assistant dashboard.
+
+Install it separately through **HACS → Custom repositories**: add
+`https://github.com/AlirezaT/gardena-mower-card` with type **Dashboard**.
+See the [installation guide](https://github.com/AlirezaT/gardena-mower-card#install-with-hacs)
+and [screenshot gallery](https://github.com/AlirezaT/gardena-mower-card#screenshots-and-animation).
+
+<a href="https://github.com/AlirezaT/gardena-mower-card"><img src="https://raw.githubusercontent.com/AlirezaT/gardena-mower-card/main/docs/overview.png" alt="Gardena Mower Card overview and quick controls" width="360"></a>
+
+<details>
+<summary>See the mower status animations</summary>
+
+![Mower status animation](https://raw.githubusercontent.com/AlirezaT/gardena-mower-card/main/docs/mower-status.gif)
+
+</details>
+
+Screenshots and animation use simulated mower data. Available controls depend on
+your mower and integration version.
+
 ## Highlights
 
 - Local BLE connection, no cloud dependency.
