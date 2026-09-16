@@ -41,16 +41,9 @@ Install it separately through **HACS → Custom repositories**: add
 See the [installation guide](https://github.com/AlirezaT/gardena-mower-card#install-with-hacs)
 and [screenshot gallery](https://github.com/AlirezaT/gardena-mower-card#screenshots-and-animation).
 
-<a href="https://github.com/AlirezaT/gardena-mower-card"><img src="https://raw.githubusercontent.com/AlirezaT/gardena-mower-card/main/docs/overview.png" alt="Gardena Mower Card overview and quick controls" width="360"></a>
+<a href="https://github.com/AlirezaT/gardena-mower-card"><img src="https://raw.githubusercontent.com/AlirezaT/gardena-mower-card/v1.0.2/docs/mower-card.gif" alt="Full Gardena Mower Card showing animated mower status, battery, metrics and controls" width="440"></a>
 
-<details>
-<summary>See the mower status animations</summary>
-
-![Mower status animation](https://raw.githubusercontent.com/AlirezaT/gardena-mower-card/main/docs/mower-status.gif)
-
-</details>
-
-Screenshots and animation use simulated mower data. Available controls depend on
+The full-card animation uses simulated mower data. Available controls depend on
 your mower and integration version.
 
 ## Highlights
