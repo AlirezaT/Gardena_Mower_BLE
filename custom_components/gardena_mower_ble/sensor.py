@@ -22,6 +22,7 @@ from . import GardenaConfigEntry
 from .entity import GardenaMowerBleDescriptorEntity
 from .presentation import describe_error
 from .error_help import error_guidance
+from .error_history import history_attributes
 from .timestamps import message_time_attributes
 
 SPOT_CUTTING_STATES = {
@@ -446,8 +447,10 @@ class GardenaMowerBleSensor(GardenaMowerBleDescriptorEntity, SensorEntity):
         """Return extra attributes for structured message sensors."""
         if self.entity_description.key == "productionTime":
             return {"clock_semantics": "unverified; raw device timestamp"}
-        if self.entity_description.key == "errorDescription":
-            return {"model_platform": self.coordinator.capabilities.platform,
+        if self.entity_description.key in ("errorDescription", "errorCode"):
+            return {**history_attributes(self.coordinator.data),
+                    "model_platform": self.coordinator.capabilities.platform,
+                    "reason": describe_error(self.coordinator.data.get("errorCode"), self.coordinator.capabilities.platform, self.coordinator.capabilities),
                     "guidance": error_guidance(self.coordinator.data.get("errorCode"), self.coordinator.capabilities),
                     "guidance_source": "App 9.2.0 branch audit; independently worded, not automatic recovery"}
         if self.entity_description.key != "last_message":

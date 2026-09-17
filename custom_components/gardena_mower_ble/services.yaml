@@ -48,6 +48,33 @@ clear_schedule:
       selector:
         text: {}
 
+get_error_history:
+  name: Get error history
+  description: Read messages stored on the robot and return structured response data. No mowing or settings changes. Like the app, exposes up to 50 entries in device index order.
+  fields:
+    max_entries:
+      name: Maximum entries
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50
+          mode: box
+    offset:
+      name: Starting index
+      description: Zero-based index. Use next_offset from the previous response for another page. The robot can rotate its log between calls.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 49
+          mode: box
+    config_entry_id:
+      name: Config entry ID
+      description: Required only when multiple Gardena mower BLE devices are loaded.
+      selector:
+        text: {}
+
 log_error_history:
   name: Log error history
   description: Read mower message history and write it to the Home Assistant log.

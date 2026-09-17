@@ -9,7 +9,8 @@ from bleak_retry_connector import close_stale_connections_by_address
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, CONF_CLIENT_ID, CONF_PIN, Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.util import dt as dt_util
 from homeassistant.exceptions import (
     ConfigEntryAuthFailed,
     ConfigEntryNotReady,
@@ -21,6 +22,7 @@ from .const import DOMAIN, LOGGER
 from .coordinator import GardenaCoordinator
 from .presentation import model_label
 from .entity_visibility import reconcile_model_visibility
+from .error_history import read_error_history
 
 type GardenaConfigEntry = ConfigEntry[GardenaCoordinator]
 
@@ -38,6 +40,7 @@ PLATFORMS = [
 SERVICE_CLEAR_SCHEDULE = "clear_schedule"
 SERVICE_DELETE_SCHEDULE = "delete_schedule"
 SERVICE_LOG_ERROR_HISTORY = "log_error_history"
+SERVICE_GET_ERROR_HISTORY = "get_error_history"
 SERVICE_REFRESH_DIAGNOSTICS = "refresh_diagnostics"
 CONNECT_AUTH_ATTEMPTS = 3
 CONNECT_AUTH_RETRY_DELAY = 3
@@ -139,6 +142,21 @@ async def _async_options_updated(hass: HomeAssistant, entry: GardenaConfigEntry)
 
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register integration services."""
+    async def async_get_error_history(call: ServiceCall) -> dict:
+        """Return stored robot messages without changing mower state."""
+        try:
+            coordinator = await _async_get_service_coordinator(
+                hass, call.data.get("config_entry_id")
+            )
+            return await read_error_history(
+                coordinator.mower,
+                max_entries=call.data["max_entries"],
+                offset=call.data["offset"],
+                timezone=dt_util.get_time_zone(hass.config.time_zone),
+            )
+        except (RuntimeError, ValueError, IndexError, BleakError, TimeoutError) as err:
+            raise HomeAssistantError(f"Unable to read mower error history: {err}") from err
+
     async def async_delete_schedule(call: ServiceCall) -> None:
         """Delete one mower schedule task by its 1-based index."""
         coordinator = await _async_get_service_coordinator(
@@ -196,6 +214,19 @@ def _async_register_services(hass: HomeAssistant) -> None:
             SERVICE_CLEAR_SCHEDULE,
             async_clear_schedule,
             schema=vol.Schema({vol.Optional("config_entry_id"): str}),
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_GET_ERROR_HISTORY):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_GET_ERROR_HISTORY,
+            async_get_error_history,
+            schema=vol.Schema({
+                vol.Optional("max_entries", default=10): vol.All(vol.Coerce(int), vol.Range(min=1, max=50)),
+                vol.Optional("offset", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=49)),
+                vol.Optional("config_entry_id"): str,
+            }),
+            supports_response=SupportsResponse.ONLY,
         )
 
     if not hass.services.has_service(DOMAIN, SERVICE_LOG_ERROR_HISTORY):

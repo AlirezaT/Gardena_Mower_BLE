@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .connection import Mower
+from .error_history import read_error_history, history_signature
 from .presentation import describe_error
 from .model_diagnostics import (
     read_model_diagnostics,
@@ -451,13 +452,16 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             LOGGER.debug("IsOperatorLoggedIn: " + str(data["operatorstate"]))
 
             if poll_diagnostics:
+                latest_message = None
                 try:
-                    data["last_message"] = await self.mower.command(
+                    latest_message = await self.mower.command(
                         "GetMessage", messageId=0
                     )
+                    data["last_message"] = latest_message
                     LOGGER.debug("last_message: " + str(data["last_message"]))
                 except (ValueError, IndexError) as err:
                     LOGGER.debug("Unable to read last mower message: %s", err)
+                await self._async_update_error_history(data, latest_message)
 
             if (poll_settings or poll_diagnostics) and self._zone_protect_supported:
                 data["ZoneProtectEnabled"] = None
@@ -496,6 +500,29 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         LOGGER.debug("MOWER DATA: %s", data)
 
         return data
+
+    async def _async_update_error_history(self, data, latest_message):
+        """Cache the robot log; refresh only when its head/count changes or reads failed."""
+        signature = history_signature(data.get("NumberOfMessages"), latest_message)
+        cached = data.get("error_history_snapshot")
+        if cached is not None and signature is not None and data.get("error_history_status") == "ready":
+            entries = cached["entries"]
+            previous = history_signature(cached["total_messages"], entries[0] if entries else None)
+            if signature == previous:
+                return
+        try:
+            snapshot = await read_error_history(
+                self.mower, max_entries=50,
+                timezone=dt_util.get_time_zone(self.hass.config.time_zone),
+            )
+        except (RuntimeError, ValueError, IndexError, BleakError, TimeoutError) as err:
+            # Preserve the last complete log, without making it look current.
+            data["error_history_status"] = "stale" if cached is not None else "unavailable"
+            LOGGER.debug("Unable to refresh mower history: %s", err)
+            return
+        data["error_history_snapshot"] = snapshot
+        data["error_history_status"] = "ready"
+        data["error_history_updated_at"] = dt_util.utcnow().isoformat()
 
     async def _async_update_static_info(self, data: dict[str, Any]) -> None:
         """Fetch mostly-static mower information and copy it into coordinator data."""

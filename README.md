@@ -29,6 +29,20 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
+### Testing prerelease — v3.93.0-beta.1
+
+Adds the robot's stored message history as attributes on the existing Error Code
+and Error Description sensors; their current states are unchanged. Entries include
+reason, severity, raw timestamp and available app-style date/time. The five-minute
+diagnostic check refreshes up to 50 entries when the count/head changes and marks
+cached history stale after failed reads. A separate `get_error_history` action
+returns paginated data. See [usage and dashboard list](docs/error-history.md).
+
+Manifest version: `3.93.0-beta.1`. Enable beta versions in HACS, download this
+prerelease and restart Home Assistant. No blueprint update is needed. The dashboard
+example is optional and is not installed automatically. Timestamp interpretation
+still needs physical comparison with the app. Stable remains `v3.92`.
+
 ### Current stable release — v3.92
 
 Stable `v3.92` promotes beta.5 without runtime code changes. Manifest version:
@@ -621,6 +635,7 @@ https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/aut
 | `gardena_mower_ble.delete_schedule` | Delete one weekly schedule task. |
 | `gardena_mower_ble.clear_schedule` | Delete all weekly schedule tasks. |
 | `gardena_mower_ble.log_error_history` | Read mower message history and write it to the Home Assistant log. |
+| `gardena_mower_ble.get_error_history` | Return a page of the robot's stored error/message history as structured response data; see [usage and limits](docs/error-history.md). |
 | `gardena_mower_ble.refresh_diagnostics` | Run a one-shot mower refresh including diagnostics. |
 
 ## Notes And Limitations
