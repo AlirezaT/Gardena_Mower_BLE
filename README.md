@@ -29,7 +29,21 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.93.0-beta.2
+### Current stable release — v3.93
+
+Stable `v3.93` promotes `v3.93.0-beta.2` without runtime code changes.
+Manifest version: `3.93`. Includes robot error-history attributes, bounded
+connection attempts and actual Bluetooth proxy diagnostics. **161 automated tests
+pass.** September 18 Minimo logs confirm successful connections through both
+`light-kitchen` and `ble-proxy`, authenticated polling and three stored history
+entries. The intermittent bonding failure was not reproduced; timeout recovery
+and other models still need hardware validation.
+
+Install `v3.93` in HACS and restart Home Assistant. No blueprint or proxy firmware
+update is needed. See [3.93 release notes](docs/release-3.93.md) and
+[error-history usage](docs/error-history.md).
+
+### Previous prerelease — v3.93.0-beta.2
 
 Beta.2 bounds each connection attempt (including pairing) to 60 seconds, followed
 by disconnect cleanup, and improves setup/reconnect error guidance. The upstream
@@ -44,12 +58,11 @@ diagnostic check refreshes up to 50 entries when the count/head changes and mark
 cached history stale after failed reads. A separate `get_error_history` action
 returns paginated data. See [usage and dashboard list](docs/error-history.md).
 
-Manifest version: `3.93.0-beta.2`. Enable beta versions in HACS, download this
-prerelease and restart Home Assistant. No blueprint update is needed. The dashboard
-example is optional and is not installed automatically. Timestamp interpretation
-still needs physical comparison with the app. Stable remains `v3.92`.
+This prerelease is superseded by stable `v3.93`. The dashboard example is optional
+and is not installed automatically. Timestamp interpretation still needs physical
+comparison with the app.
 
-### Current stable release — v3.92
+### Previous stable release — v3.92
 
 Stable `v3.92` promotes beta.5 without runtime code changes. Manifest version:
 `3.92`. The owner confirmed the Minimo test; September 13 start/park telemetry
