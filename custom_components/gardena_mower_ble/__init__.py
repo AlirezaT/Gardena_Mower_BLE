@@ -17,7 +17,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
 )
 
-from .connection import Mower
+from .connection import Mower, connection_failure
 from .const import DOMAIN, LOGGER
 from .coordinator import GardenaCoordinator
 from .presentation import model_label
@@ -104,7 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GardenaConfigEntry) -> b
             )
         if response_result != ResponseResult.OK:
             raise ConfigEntryNotReady(
-                f"Unable to connect to device {address}, mower returned {response_result.name}"
+                connection_failure(response_result)
             )
         LOGGER.debug("connected and paired")
 

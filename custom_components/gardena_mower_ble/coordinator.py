@@ -14,7 +14,7 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .connection import Mower
+from .connection import Mower, connection_failure
 from .error_history import read_error_history, history_signature
 from .presentation import describe_error
 from .model_diagnostics import (
@@ -255,10 +255,13 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, self.address, connectable=True
             )
             try:
-                if await self.mower.connect(device) is not ResponseResult.OK:
-                    raise UpdateFailed("Failed to connect")
+                if device is None:
+                    raise UpdateFailed("Mower is not visible to a connectable Bluetooth adapter/proxy")
+                result = await self.mower.connect(device)
+                if result is not ResponseResult.OK:
+                    raise UpdateFailed(connection_failure(result))
             except BleakError as err:
-                raise UpdateFailed("Failed to connect") from err
+                raise UpdateFailed(f"Mower Bluetooth connection failed: {err}") from err
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Poll the device."""

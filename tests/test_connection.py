@@ -105,6 +105,85 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.mower.client)
         self.assertFalse(self.mower.is_connected())
 
+    async def test_pairing_wait_is_bounded_and_cleans_client(self):
+        self.client.pair = AsyncMock(side_effect=lambda: None)
+
+        async def stalled_pair():
+            await asyncio.Event().wait()
+
+        self.client.pair.side_effect = stalled_pair
+
+        with (
+            patch("automower_ble.protocol.establish_connection", AsyncMock(return_value=self.client)),
+            patch.object(_MODULE, "CONNECT_TIMEOUT", 0.01),
+        ):
+            with self.assertRaisesRegex(BleakError, "connection/pairing timed out"):
+                await self.mower.connect(SimpleNamespace(name="test mower"))
+        self.client.pair.assert_awaited_once()
+        self.client.disconnect.assert_awaited_once()
+        self.assertEqual(self.mower.connection_diagnostics["outcome"], "timeout")
+        self.assertIsNone(self.mower.client)
+
+    async def test_external_cancellation_is_not_a_pairing_error(self):
+        started = asyncio.Event()
+
+        async def connect(mower, device):
+            mower.client = self.client
+            started.set()
+            await asyncio.Event().wait()
+
+        with patch.object(BLEClient, "connect", connect):
+            task = asyncio.create_task(self.mower.connect(object()))
+            await started.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        self.client.disconnect.assert_awaited_once()
+        self.assertEqual(self.mower.connection_diagnostics["outcome"], "cancelled")
+
+    async def test_source_is_actual_backend_not_discovery_candidate(self):
+        self.client._backend = SimpleNamespace(_source="actual proxy", secret="not exported")
+        self.client._connected_scanner = SimpleNamespace(source="actual proxy", name="Kitchen")
+
+        async def connect(mower, device):
+            self.ready()
+            return ResponseResult.OK
+
+        with (
+            patch.object(BLEClient, "connect", connect),
+            patch.object(self.mower, "_ensure_keep_alive"),
+        ):
+            await self.mower.connect(SimpleNamespace(details={"source": "other proxy"}))
+        self.assertEqual(self.mower.connection_diagnostics["source"], "actual proxy")
+        self.assertEqual(self.mower.connection_diagnostics["source_name"], "Kitchen")
+        self.assertNotIn("secret", str(self.mower.connection_diagnostics))
+        await self.mower.disconnect()
+        self.assertEqual(self.mower.connection_diagnostics["source"], "actual proxy")
+
+    async def test_new_attempt_does_not_reuse_previous_proxy(self):
+        self.mower.connection_diagnostics = {"source": "old proxy"}
+
+        async def connect(mower, device):
+            raise BleakError("no connection")
+
+        with patch.object(BLEClient, "connect", connect):
+            with self.assertRaises(BleakError):
+                await self.mower.connect(object())
+        self.assertNotIn("source", self.mower.connection_diagnostics)
+
+    def test_access_refused_does_not_claim_invalid_pin(self):
+        message = _MODULE.connection_failure(ResponseResult.NOT_ALLOWED)
+        self.assertIn("pairing mode", message)
+        self.assertIn("does not by itself mean the PIN is wrong", message)
+        self.assertIn("rejected the operator PIN", _MODULE.connection_failure(ResponseResult.INVALID_PIN))
+
+    def test_bluez_diagnostics_omit_mower_device_path(self):
+        self.mower.client = self.client
+        self.client._backend = SimpleNamespace(_device_path="/org/bluez/hci1/dev_private")
+        self.mower._capture_connection_source()
+        self.assertEqual(self.mower.connection_diagnostics["adapter"], "hci1")
+        self.assertNotIn("dev_private", str(self.mower.connection_diagnostics))
+
     async def test_reconnect_cancels_old_keep_alive(self):
         self.ready()
         self.client.is_connected = False

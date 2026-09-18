@@ -16,6 +16,21 @@ from .timestamps import local_timestamp
 from .events import EventMixin
 
 _LOGGER = logging.getLogger(__name__)
+CONNECT_TIMEOUT = 60
+
+
+def connection_failure(result):
+    """Keep BLE access failures distinct from an explicitly rejected PIN."""
+    if result is ResponseResult.NOT_ALLOWED:
+        return (
+            "Mower Bluetooth access/notification setup was refused. Close the phone "
+            "app and other Bluetooth clients, put the mower in pairing mode, and "
+            "retry with the Home Assistant proxy nearby. BLE bonding/encryption "
+            "may need authorization; this does not by itself mean the PIN is wrong."
+        )
+    if result is ResponseResult.INVALID_PIN:
+        return "The mower rejected the operator PIN; check the configured PIN."
+    return f"Mower connection failed ({result.name}); check visibility and the Bluetooth proxy."
 
 
 class _TaskLock:
@@ -58,6 +73,26 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
         self._event_frame_buffer = bytearray()
         self._pairing_pending = False
         self._pairing_result = None
+        self.connection_diagnostics = {"outcome": "not_attempted"}
+
+    def _capture_connection_source(self):
+        """Read only allowlisted metadata from the actual client, not discovery."""
+        client = self.client
+        backend = getattr(client, "_backend", None)
+        if backend is None:
+            return
+        self.connection_diagnostics["backend"] = type(backend).__name__
+        scanner = getattr(client, "_connected_scanner", None)
+        for key, value in (
+            ("source", getattr(scanner, "source", None) or getattr(backend, "_source", None)),
+            ("source_name", getattr(scanner, "name", None) or getattr(backend, "_source_name", None)),
+        ):
+            if isinstance(value, str):
+                self.connection_diagnostics[key] = value
+        path = getattr(backend, "_device_path", None)
+        if isinstance(path, str) and path.startswith("/org/bluez/"):
+            # Retain only the local adapter name, never the mower's device path.
+            self.connection_diagnostics["adapter"] = path.split("/")[3]
 
     async def initialize_capabilities(self, brand=None):
         """Identify this session with reads only, before creating HA entities."""
@@ -90,16 +125,38 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
             if self.is_connected():
                 return await super().connect(device)
             await self.disconnect()
+            self.connection_diagnostics = {"outcome": "connecting"}
             self._connecting_task = asyncio.current_task()
             try:
-                result = await super().connect(device)
+                # Bound the entire upstream handshake, including both pair()
+                # calls. Do not replace pairing or change the security sequence.
+                async with asyncio.timeout(CONNECT_TIMEOUT):
+                    result = await super().connect(device)
+                    if asyncio.current_task().cancelling():
+                        raise asyncio.CancelledError
                 self._session_ready = (
                     result is ResponseResult.OK and super().is_connected()
                 )
                 if result is ResponseResult.OK and not self._session_ready:
-                    return ResponseResult.UNKNOWN_ERROR
+                    result = ResponseResult.UNKNOWN_ERROR
+                self.connection_diagnostics["outcome"] = result.name
                 return result
+            except TimeoutError as err:
+                self.connection_diagnostics["outcome"] = "timeout"
+                raise BleakError(
+                    "Mower connection/pairing timed out. Close the phone app, check "
+                    "the Bluetooth proxy and signal, and put the mower in pairing "
+                    "mode before retrying. A timeout does not establish a wrong PIN."
+                ) from err
+            except asyncio.CancelledError:
+                self.connection_diagnostics["outcome"] = "cancelled"
+                raise
+            except BleakError:
+                self.connection_diagnostics["outcome"] = "bluetooth_error"
+                raise
             finally:
+                self._capture_connection_source()
+                _LOGGER.debug("Mower connection diagnostics: %s", self.connection_diagnostics)
                 self._connecting_task = None
                 if not self._session_ready:
                     await self.disconnect()
@@ -141,6 +198,7 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
+            self._capture_connection_source()
             client, self.client = self.client, None
             self.write_char = self.read_char = None
             self._notify_started = False

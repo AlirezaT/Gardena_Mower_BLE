@@ -29,7 +29,13 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.93.0-beta.1
+### Testing prerelease — v3.93.0-beta.2
+
+Beta.2 bounds each connection attempt (including pairing) to 60 seconds, followed
+by disconnect cleanup, and improves setup/reconnect error guidance. The upstream
+pairing, encryption, notification and PIN sequence is unchanged. Debug logs now
+record the actual selected Bluetooth backend/proxy when available; downloaded
+diagnostics redact source identities. See [beta.2 notes](docs/release-3.93.0-beta.2.md).
 
 Adds the robot's stored message history as attributes on the existing Error Code
 and Error Description sensors; their current states are unchanged. Entries include
@@ -38,7 +44,7 @@ diagnostic check refreshes up to 50 entries when the count/head changes and mark
 cached history stale after failed reads. A separate `get_error_history` action
 returns paginated data. See [usage and dashboard list](docs/error-history.md).
 
-Manifest version: `3.93.0-beta.1`. Enable beta versions in HACS, download this
+Manifest version: `3.93.0-beta.2`. Enable beta versions in HACS, download this
 prerelease and restart Home Assistant. No blueprint update is needed. The dashboard
 example is optional and is not installed automatically. Timestamp interpretation
 still needs physical comparison with the app. Stable remains `v3.92`.
