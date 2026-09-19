@@ -167,6 +167,25 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(model(29, value).frost_group, 5370)
         self.assertIsNone(model(22).frost_group)
 
+    def test_main_application_package_uses_suffix_not_prefix(self):
+        for value, expected in (
+            ("40.5_Main-App-P0_20.28", (5412, 6050, 26)),
+            ("40.5_Main-App-P0_20.29", (5370, 6050, 26)),
+            ("20.28_Main-App-P0_release-41.00", (5370, 5926, 24)),
+            ("Main-App-P0_40.99.00", (5370, 6050, 26)),
+            ("40.5_Main-App-P005_50.2", (5370, 5926, 24)),
+        ):
+            caps = model(14, value)
+            self.assertEqual((caps.frost_group, caps.zone_group, caps.corridor_read), expected)
+
+    def test_non_application_and_malformed_packages_are_unknown(self):
+        for value in (
+            "40.104_Main-Boot-P0_41.00", "5995762-04C_P005G-SwPkg_50.3",
+            "40.5_Main-App-P0_unknown", "40.5_Main-App-P0_41.00 extra",
+            "40.5_Main-App-P0_41.00_junk", "41.00 arbitrary text",
+        ):
+            self.assertIsNone(model(14, value).firmware_pair)
+
     def test_stale_entities_cannot_bypass_model_limits(self):
         caps = model(29)
         for command, kwargs in (

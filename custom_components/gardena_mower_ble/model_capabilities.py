@@ -73,7 +73,18 @@ class ModelCapabilities:
     def firmware_pair(self):
         if not isinstance(self.firmware, str):
             return None
-        match = re.fullmatch(r"(\d{2})\.(\d{2})(?:\.\d+)*", self.firmware.strip())
+        value = self.firmware.strip()
+        # The app's mainAppVersionRegex takes the suffix after Main-App-<platform>_,
+        # stripping release-. The leading number identifies a different component;
+        # using it would select the wrong P0 command families.
+        package = re.fullmatch(
+            r"(?:\d+(?:\.\d+)+_)?Main-App-[A-Za-z0-9]+_(?:release-)?"
+            r"(\d{2}\.\d{1,2}(?:\.\d+)*)",
+            value,
+        )
+        if package:
+            value = package[1]
+        match = re.fullmatch(r"(\d{2})\.(\d{1,2})(?:\.\d+)*", value)
         return tuple(map(int, match.groups())) if match else None
 
     @property

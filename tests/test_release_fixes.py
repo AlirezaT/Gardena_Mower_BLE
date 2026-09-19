@@ -1,6 +1,7 @@
 """Regression tests for issue 12 persistence and issue 11 start recovery."""
 
 import ast
+import asyncio
 import importlib.util
 import unittest
 from pathlib import Path
@@ -152,6 +153,7 @@ class StartTests(unittest.IsolatedAsyncioTestCase):
             mower_activity=AsyncMock(return_value=MowerActivity.PARKED),
             mower_override=AsyncMock(return_value=ResponseResult.OK),
             disconnect=AsyncMock(),
+            is_connected=Mock(return_value=True),
         )
         self.ensure = AsyncMock()
 
@@ -180,6 +182,66 @@ class StartTests(unittest.IsolatedAsyncioTestCase):
             MowerState.PENDING_START,
         ]
         await self.start()
+        self.mower.mower_override.assert_awaited_once()
+        self.mower.disconnect.assert_not_called()
+        self.ensure.assert_awaited_once()
+
+    async def test_mowing_after_ambiguous_start_keeps_session(self):
+        self.mower.mower_override.return_value = ResponseResult.UNKNOWN_ERROR
+        self.mower.mower_state.side_effect = [MowerState.RESTRICTED, MowerState.IN_OPERATION]
+        self.mower.mower_activity.side_effect = [MowerActivity.PARKED, MowerActivity.MOWING]
+        self.ensure.side_effect = [None, RuntimeError("pairing timed out")]
+        await self.start()
+        self.mower.disconnect.assert_not_called()
+        self.mower.mower_override.assert_awaited_once()
+
+    async def test_reconnect_failure_reports_uncertain_start(self):
+        self.mower.mower_override.return_value = ResponseResult.UNKNOWN_ERROR
+        self.ensure.side_effect = [None, RuntimeError("pairing timed out")]
+        with self.assertRaisesRegex(CONTROL.ManualStartError, "may already be mowing"):
+            await self.start()
+        self.mower.mower_override.assert_awaited_once()
+
+    async def test_lost_link_reconnects_before_confirmation(self):
+        self.mower.is_connected.return_value = False
+        self.mower.mower_override.return_value = ResponseResult.UNKNOWN_ERROR
+        self.mower.mower_state.side_effect = [MowerState.RESTRICTED, MowerState.IN_OPERATION]
+        self.mower.mower_activity.side_effect = [MowerActivity.PARKED, MowerActivity.MOWING]
+        await self.start()
+        self.mower.disconnect.assert_awaited_once()
+        self.mower.mower_override.assert_awaited_once()
+
+    async def test_safety_stop_after_ambiguous_start_never_replays(self):
+        self.mower.mower_override.return_value = ResponseResult.UNKNOWN_ERROR
+        self.mower.mower_state.side_effect = [MowerState.RESTRICTED, MowerState.STOPPED]
+        with self.assertRaisesRegex(CONTROL.ManualStartError, "STOPPED"):
+            await self.start()
+        self.mower.disconnect.assert_not_called()
+        self.mower.mower_override.assert_awaited_once()
+
+    async def test_read_failure_then_reconnect_confirms_without_replay(self):
+        self.mower.mower_override.return_value = ResponseResult.UNKNOWN_ERROR
+        self.mower.mower_state.side_effect = [
+            MowerState.RESTRICTED, BleakError("link lost"), MowerState.IN_OPERATION
+        ]
+        self.mower.mower_activity.side_effect = [MowerActivity.PARKED, MowerActivity.MOWING]
+        await self.start()
+        self.mower.disconnect.assert_awaited_once()
+        self.mower.mower_override.assert_awaited_once()
+
+    async def test_cancelled_reconnect_does_not_retry_or_mask_cancellation(self):
+        self.mower.mower_override.return_value = ResponseResult.DEVICE_BUSY
+        self.ensure.side_effect = [None, asyncio.CancelledError()]
+        with self.assertRaises(asyncio.CancelledError):
+            await self.start()
+        self.mower.mower_override.assert_awaited_once()
+
+    async def test_failed_read_after_reconnect_does_not_replay(self):
+        self.mower.is_connected.return_value = False
+        self.mower.mower_override.return_value = ResponseResult.UNKNOWN_ERROR
+        self.mower.mower_state.side_effect = [MowerState.RESTRICTED, BleakError("lost")]
+        with self.assertRaisesRegex(CONTROL.ManualStartError, "start was not repeated"):
+            await self.start()
         self.mower.mower_override.assert_awaited_once()
 
     async def test_physical_stop_is_never_bypassed(self):

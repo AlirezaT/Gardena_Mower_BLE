@@ -29,6 +29,18 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
+### Testing prerelease — v3.94.0-beta.1
+
+Checks fresh mower state before disconnecting after an ambiguous start response.
+An already accepted start retains its connection; failed confirmation clearly
+reports that the mower may already be mowing. P0 firmware-dependent settings now
+also understand full main-application package strings, using the app's version
+suffix rather than the component prefix. Unknown formats remain conservative.
+
+Manifest: `3.94.0-beta.1`. Enable prereleases in HACS, install and restart HA.
+No blueprint or proxy firmware update is needed. Stable remains `v3.93`.
+See [beta notes and test instructions](docs/release-3.94.0-beta.1.md).
+
 ### Current stable release — v3.93
 
 Stable `v3.93` promotes `v3.93.0-beta.2` without runtime code changes.
