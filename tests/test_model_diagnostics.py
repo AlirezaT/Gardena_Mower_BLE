@@ -121,7 +121,7 @@ class DiagnosticTests(unittest.IsolatedAsyncioTestCase):
         data = await read_model_diagnostics(mower, set())
         self.assertEqual(
             [call.args[0] for call in mower.command_response.await_args_list],
-            ["GetComboardSensorData", "GetSignalQuality"],
+            ["GetRestrictionReason", "GetComboardSensorData", "GetSignalQuality"],
         )
         self.assertEqual(data["pitch"], 123)
         self.assertNotIn("batteryVoltage", data)
@@ -130,6 +130,31 @@ class DiagnosticTests(unittest.IsolatedAsyncioTestCase):
         mower = SimpleNamespace(capabilities=model(99), command_response=AsyncMock())
         self.assertEqual(await read_model_diagnostics(mower, set()), {})
         mower.command_response.assert_not_awaited()
+
+    async def test_restriction_reason_validates_wire_value_for_both_generations(self):
+        for device_type in (14, 29):
+            for value, expected in ((0, 0), (6, 6), (255, 255), (-1, None),
+                                    (256, None), (True, None), ({}, None),
+                                    (None, None)):
+                mower = SimpleNamespace(
+                    capabilities=model(device_type),
+                    command_response=AsyncMock(return_value=(ResponseResult.OK, value)),
+                )
+                data = await read_model_diagnostics(mower, set())
+                self.assertEqual(data["restrictionReasonRaw"], expected)
+
+    async def test_restriction_busy_retries_and_unsupported_is_cached(self):
+        for result in (ResponseResult.DEVICE_BUSY, ResponseResult.INVALID_ID):
+            async def response(command, **kwargs):
+                return (result, None) if command == "GetRestrictionReason" else (ResponseResult.OK, None)
+
+            mower = SimpleNamespace(capabilities=model(14), command_response=AsyncMock(side_effect=response))
+            unsupported = set()
+            for _ in range(2):
+                data = await read_model_diagnostics(mower, unsupported)
+                self.assertIsNone(data["restrictionReasonRaw"])
+            calls = [c for c in mower.command_response.await_args_list if c.args[0] == "GetRestrictionReason"]
+            self.assertEqual(len(calls), 2 if result is ResponseResult.DEVICE_BUSY else 1)
 
     async def test_statistics_do_not_depend_on_aggregate_layout(self):
         async def response(command, **kwargs):

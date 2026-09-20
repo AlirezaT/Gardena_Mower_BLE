@@ -29,6 +29,14 @@ async def read_model_diagnostics(mower, unsupported):
     async def read(name, **kwargs):
         return await read_optional(mower, unsupported, name, **kwargs)
 
+    if caps.generation in (3, 4):
+        # Same Planner command used by the app's parked-status path. Keep the
+        # wire value: presentation-enum ordinals are not a verified wire map.
+        reason = await read("GetRestrictionReason")
+        data["restrictionReasonRaw"] = (
+            reason if type(reason) is int and 0 <= reason <= 255 else None
+        )
+
     if caps.generation == 3:
         for command, keys in (
             (

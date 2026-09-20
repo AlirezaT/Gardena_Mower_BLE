@@ -22,11 +22,16 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             connection_diagnostics={"source": "private source", "source_name": "private name", "outcome": "OK"},
             is_connected=lambda: True,
         )
-        entry = SimpleNamespace(data={"pin": "secret"}, runtime_data=SimpleNamespace(mower=mower))
+        entry = SimpleNamespace(data={"pin": "secret"}, runtime_data=SimpleNamespace(
+            mower=mower, data={"restrictionReasonRaw": 3, "lift": True, "pin": "secret", "mowerName": "private mower"}
+        ))
         result = await diagnostic(None, entry)
         self.assertEqual(result["connection"]["source"], "**REDACTED**")
         self.assertEqual(result["connection"]["source_name"], "**REDACTED**")
         self.assertTrue(result["connection"]["connected"])
         self.assertNotIn("secret", str(result))
+        self.assertNotIn("private mower", str(result))
+        self.assertEqual(result["mower_status_cached"]["restrictionReasonRaw"], 3)
+        self.assertTrue(result["mower_status_cached"]["lift"])
         self.assertEqual(mower.connection_diagnostics["source"], "private source")
         self.assertEqual(await diagnostic(None, SimpleNamespace()), {"connection": {"outcome": "not_loaded"}})

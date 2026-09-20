@@ -15,6 +15,7 @@ class ManualStartError(RuntimeError):
 async def _read_start_state(mower):
     state = await mower.mower_state()
     activity = await mower.mower_activity()
+    _LOGGER.debug("Fresh start state: state=%s, activity=%s", state, activity)
     if state is None or activity is None:
         raise ManualStartError("Cannot confirm mower state; start was not repeated")
     if state in (
@@ -53,6 +54,7 @@ async def start_manual_mowing(mower, duration, ensure_connected):
             result = await mower.mower_override(duration)
         except (BleakError, TimeoutError):
             result = ResponseResult.UNKNOWN_ERROR
+        _LOGGER.debug("Manual start attempt %s: result=%s", attempt + 1, result.name)
         if result is ResponseResult.OK:
             return
         transient = result in (
