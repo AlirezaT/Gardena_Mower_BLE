@@ -1,11 +1,14 @@
 """Recover an explicitly requested start without changing modes during setup."""
 
+import asyncio
 import logging
 
 from automower_ble.protocol import MowerActivity, MowerState, ResponseResult
 from bleak import BleakError
 
 _LOGGER = logging.getLogger(__name__)
+START_OBSERVATION_SECONDS = 15
+START_POLL_SECONDS = 2
 
 
 class ManualStartError(RuntimeError):
@@ -45,64 +48,43 @@ def _start_accepted(state, activity):
 
 
 async def start_manual_mowing(mower, duration, ensure_connected):
-    """Confirm ambiguous starts on the current session before reconnecting."""
+    """Send once; observe an ambiguous start without disconnecting or replaying."""
     await ensure_connected()
     await _read_start_state(mower)
-    result = ResponseResult.UNKNOWN_ERROR
-    for attempt in range(2):
-        try:
-            result = await mower.mower_override(duration)
-        except (BleakError, TimeoutError):
-            result = ResponseResult.UNKNOWN_ERROR
-        _LOGGER.debug("Manual start attempt %s: result=%s", attempt + 1, result.name)
-        if result is ResponseResult.OK:
-            return
-        transient = result in (
-            ResponseResult.UNKNOWN_ERROR,
-            ResponseResult.DEVICE_BUSY,
+    try:
+        result = await mower.mower_override(duration)
+    except (BleakError, TimeoutError):
+        result = ResponseResult.UNKNOWN_ERROR
+    _LOGGER.debug("Manual start attempt 1: result=%s", result.name)
+    if result is ResponseResult.OK:
+        return
+    if result not in (ResponseResult.UNKNOWN_ERROR, ResponseResult.DEVICE_BUSY):
+        state, activity = await _read_start_state(mower)
+        raise ManualStartError(
+            f"Start mowing failed: {result.name}; state={state.name}, "
+            f"activity={activity.name}. Check the mower display and BLE diagnostics"
         )
-        if transient and mower.is_connected():
-            try:
+
+    # City 500/41.6 can enter IN_OPERATION/CHARGING during its countdown.
+    # That is not proof of mowing, nor a reason to tear down a live session.
+    # The app's duration-start path does not reconnect/replay on this response.
+    _LOGGER.debug("Observing ambiguous start for up to %ss; no reconnect or replay", START_OBSERVATION_SECONDS)
+    last_state = "unavailable"
+    try:
+        async with asyncio.timeout(START_OBSERVATION_SECONDS):
+            while mower.is_connected():
                 state, activity = await _read_start_state(mower)
-            except (BleakError, TimeoutError):
-                # The response may have been lost after the command took effect.
-                # Safety/unknown-state errors intentionally remain fatal here.
-                pass
-            else:
+                last_state = f"{state.name}/{activity.name}"
                 if _start_accepted(state, activity):
-                    _LOGGER.debug("Ambiguous start confirmed on existing session: state=%s, activity=%s", state.name, activity.name)
+                    _LOGGER.debug("Ambiguous start confirmed on existing session: %s", last_state)
                     return
-        if not transient:
-            state, activity = await _read_start_state(mower)
-            raise ManualStartError(
-                f"Start mowing failed: {result.name}; state={state.name}, "
-                f"activity={activity.name}. Check the mower display and BLE diagnostics"
-            )
-        if attempt:
-            raise ManualStartError(
-                "Start acceptance could not be confirmed after one retry. "
-                "The mower may have started; check its state before requesting start again"
-            )
-        # Re-authenticate only for this explicit user/automation command. Read
-        # back state before replaying so an accepted start is not sent twice.
-        try:
-            _LOGGER.debug("Start acceptance unconfirmed; reconnecting once before checking state again")
-            await mower.disconnect()
-            await ensure_connected()
-        except Exception as err:
-            # Includes HA UpdateFailed from ensure_connected. Do not catch
-            # CancelledError or replay a command whose acceptance is unknown.
-            raise ManualStartError(
-                "Start acceptance is unknown: reconnecting to confirm it failed. "
-                "The mower may already be mowing. Check its state before retrying. "
-                f"Connection detail: {err}"
-            ) from err
-        try:
-            state, activity = await _read_start_state(mower)
-        except (BleakError, TimeoutError) as err:
-            raise ManualStartError(
-                "Start acceptance is unknown: state could not be read after reconnecting. "
-                "The mower may already be mowing; start was not repeated"
-            ) from err
-        if _start_accepted(state, activity):
-            return
+                await asyncio.sleep(START_POLL_SECONDS)
+    except (BleakError, TimeoutError):
+        # Let ordinary polling handle a lost link. Never replay a movement
+        # command whose outcome is unknown. Cancellation/safety errors propagate.
+        _LOGGER.debug("Start observation ended or connection was lost; last state=%s", last_state)
+    raise ManualStartError(
+        "Start acceptance is unknown; start was not repeated and no recovery "
+        "reconnect was requested. The mower may already be mowing or waiting "
+        f"to leave the dock. Last state: {last_state}. Check the mower before retrying"
+    )
