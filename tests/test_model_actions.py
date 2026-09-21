@@ -1,6 +1,7 @@
 """Action ordering and SpotCut restore must not create extra mowing time."""
 
 import unittest
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 from automower_ble.mower import Mower as UpstreamMower
@@ -18,6 +19,57 @@ from test_release_fixes import method
 
 
 class ActionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_p0_timed_start_matches_app(self):
+        mower = self.mower(14)
+        mower.command_response_locked = AsyncMock(return_value=(ResponseResult.OK, None))
+        self.assertIs(await mower.mower_override(3), ResponseResult.OK)
+        calls = mower.command_response_locked.await_args_list
+        self.assertEqual([c.args[0] for c in calls], ["SetMode", "SetOverrideMow", "StartTrigger"])
+        self.assertEqual(calls[0].kwargs["mode"], ModeOfOperation.AUTO)
+        self.assertEqual(calls[1].kwargs["duration"], 10800)
+
+    async def test_p0_start_stops_on_failed_preparation(self):
+        for index in (0, 1):
+            mower = self.mower(14)
+            mower.command_response_locked = AsyncMock(side_effect=[(ResponseResult.OK, None)] * index + [(ResponseResult.NOT_ALLOWED, None)])
+            self.assertIs(await mower.mower_override(1.5), ResponseResult.NOT_ALLOWED)
+            self.assertEqual(mower.command_response_locked.await_count, index + 1)
+
+    async def test_non_p0_start_delegates_upstream(self):
+        for device_type in (29, 34, 99):
+            mower = self.mower(device_type)
+            with patch.object(UpstreamMower, "mower_override", new_callable=AsyncMock, return_value=ResponseResult.OK) as original:
+                self.assertIs(await mower.mower_override(1.5), ResponseResult.OK)
+                original.assert_awaited_once_with(1.5)
+
+    async def test_p0_invalid_duration_has_no_writes(self):
+        mower = self.mower(14)
+        mower.command_response_locked = AsyncMock()
+        for duration in (0, -1):
+            with self.assertRaises(ValueError):
+                await mower.mower_override(duration)
+        mower.command_response_locked.assert_not_awaited()
+
+    async def test_p0_ambiguous_trigger_keeps_confirmation(self):
+        for activity, expected in ((MowerActivity.GOING_OUT, ResponseResult.OK), (MowerActivity.CHARGING, ResponseResult.UNKNOWN_ERROR)):
+            mower = self.mower(14)
+            mower.command_response_locked = AsyncMock(side_effect=[
+                (ResponseResult.OK, None), (ResponseResult.OK, None),
+                (ResponseResult.UNKNOWN_ERROR, None),
+                (ResponseResult.OK, MowerState.IN_OPERATION), (ResponseResult.OK, activity),
+            ])
+            with patch("automower_ble.mower.asyncio.sleep", new_callable=AsyncMock):
+                self.assertIs(await mower.mower_override(3), expected)
+            self.assertEqual([c.args[0] for c in mower.command_response_locked.await_args_list], ["SetMode", "SetOverrideMow", "StartTrigger", "GetState", "GetActivity"])
+
+    async def test_p0_cancellation_releases_lock_without_replay(self):
+        mower = self.mower(14)
+        mower.command_response_locked = AsyncMock(side_effect=asyncio.CancelledError)
+        with self.assertRaises(asyncio.CancelledError):
+            await mower.mower_override(3)
+        self.assertFalse(mower.lock.locked())
+        mower.command_response_locked.assert_awaited_once()
+
     def mower(self, device_type):
         mower = Mower(1, "00:00:00:00:00:00", 1234)
         mower.capabilities = model(device_type)

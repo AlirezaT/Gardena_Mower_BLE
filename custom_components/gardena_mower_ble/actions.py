@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from time import monotonic
 
 from automower_ble.protocol import ModeOfOperation, MowerActivity, MowerState, ResponseResult
 
@@ -9,6 +10,42 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ActionMixin:
+    async def mower_override(self, duration_hours=3.0):
+        """Match the app's timed-start sequence on the P0 platform."""
+        if self.capabilities.platform != "P0":
+            return await super().mower_override(duration_hours)
+        if duration_hours <= 0:
+            raise ValueError("Duration must be greater than 0")
+        async with self.lock:
+            # ClearOverride belongs to resume-schedule, not this app path.
+            for command, values in (
+                ("SetMode", {"mode": ModeOfOperation.AUTO}),
+                ("SetOverrideMow", {"duration": int(duration_hours * 3600)}),
+                ("StartTrigger", {}),
+            ):
+                started = monotonic()
+                _LOGGER.debug("P0 timed start: sending %s", command)
+                try:
+                    result, _ = await self.command_response_locked(
+                        command, warn_on_error=False, **values
+                    )
+                except BaseException as err:
+                    # No exception text/payloads: they may contain private data.
+                    _LOGGER.debug("P0 timed start: %s ended with %s after %.3fs", command, type(err).__name__, monotonic() - started)
+                    raise
+                _LOGGER.debug("P0 timed start: %s result=%s elapsed=%.3fs", command, result.name, monotonic() - started)
+                if command == "StartTrigger":
+                    if result is ResponseResult.OK:
+                        return result
+                    # Retain upstream's existing state confirmation/timing;
+                    # change only the command sequence in this experiment.
+                    return await self._start_trigger_result_locked(
+                        result, "manual mowing",
+                        (MowerActivity.GOING_OUT, MowerActivity.MOWING),
+                    )
+                if result is not ResponseResult.OK:
+                    return result
+
     async def _spot_cut_available(self):
         if self.capabilities.platform in ("P0", "P005"):
             return True
