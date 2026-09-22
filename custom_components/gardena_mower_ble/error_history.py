@@ -1,6 +1,8 @@
 """Read and present the robot's message log, not HA recorder history."""
 
 import asyncio
+import logging
+from time import monotonic
 
 from automower_ble.protocol import ResponseResult
 
@@ -9,6 +11,7 @@ from .timestamps import message_time_attributes
 
 APP_HISTORY_LIMIT = 50
 SEVERITIES = ("unknown", "fatal", "error", "warning", "info", "debug", "software")
+_LOGGER = logging.getLogger(__name__)
 
 
 def history_signature(count, latest):
@@ -48,6 +51,7 @@ async def read_error_history(mower, *, max_entries=10, offset=0, timezone=None):
 
     App 9.2.0 caps its view at 50 messages and requests chunks of ten.
     Count/first-entry checks detect common rotations, not atomic snapshots.
+    Release the command lock between reads so controls can run during a fetch.
     """
     if type(max_entries) is not int or not 1 <= max_entries <= APP_HISTORY_LIMIT:
         raise ValueError("max_entries must be an integer from 1 to 50")
@@ -55,13 +59,28 @@ async def read_error_history(mower, *, max_entries=10, offset=0, timezone=None):
         raise ValueError("offset must be an integer from 0 to 49")
 
     async def read(command, **kwargs):
-        result, value = await mower.command_response(
-            command, warn_on_error=False, **kwargs
-        )
+        started = monotonic()
+        outcome = "interrupted"
+        try:
+            async with mower.lock:
+                result, value = await mower.command_response(
+                    command, warn_on_error=False, **kwargs
+                )
+            outcome = result.name
+        except BaseException as err:
+            outcome = type(err).__name__
+            raise
+        finally:
+            _LOGGER.debug(
+                "History read %s index=%s outcome=%s elapsed=%.3fs",
+                command, kwargs.get("messageId", "count"), outcome,
+                monotonic() - started,
+            )
         if result is not ResponseResult.OK:
             raise RuntimeError(
                 f"Cannot read mower history: {command} returned {result.name}"
             )
+        await asyncio.sleep(0)
         return value
 
     def validate_count(value):
@@ -81,7 +100,7 @@ async def read_error_history(mower, *, max_entries=10, offset=0, timezone=None):
                 raise ValueError(f"Invalid mower history {key}")
         return {key: value[key] for key in ("time", "code", "severity")}
 
-    async with asyncio.timeout(60), mower.lock:
+    async with asyncio.timeout(60):
         total = validate_count(await read("GetNumberOfMessages"))
         available = min(total, APP_HISTORY_LIMIT)
         end = min(offset + max_entries, available)

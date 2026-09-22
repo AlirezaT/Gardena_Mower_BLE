@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from contextlib import suppress
+from time import monotonic
 
 from automower_ble.mower import Mower as UpstreamMower
 from automower_ble.protocol import ResponseResult
@@ -115,6 +116,40 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
 
     def is_connected(self):
         return self._session_ready and super().is_connected()
+
+    async def _timed_command(self, method, command_name, **kwargs):
+        """Measure local lock wait separately from command execution; omit payloads."""
+        started = monotonic()
+        acquired = None
+        outcome = "completed"
+        try:
+            async with self.lock:
+                acquired = monotonic()
+                result = await method(command_name, **kwargs)
+                if isinstance(result, tuple) and result and isinstance(result[0], ResponseResult):
+                    outcome = result[0].name
+                elif result is None:
+                    outcome = "no_value"
+                return result
+        except BaseException as err:
+            outcome = type(err).__name__
+            raise
+        finally:
+            finished = monotonic()
+            _LOGGER.debug(
+                "Mower command %s: outcome=%s lock_wait=%.3fs execution=%.3fs",
+                command_name, outcome,
+                (acquired if acquired is not None else finished) - started,
+                finished - acquired if acquired is not None else 0.0,
+            )
+
+    async def command(self, command_name, **kwargs):
+        return await self._timed_command(super().command, command_name, **kwargs)
+
+    async def command_response(self, command_name, warn_on_error=True, **kwargs):
+        return await self._timed_command(
+            super().command_response, command_name, warn_on_error=warn_on_error, **kwargs
+        )
 
     async def mower_next_start_time(self, timezone=None):
         value = await self.command("GetNextStartTime")

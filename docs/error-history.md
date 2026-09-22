@@ -10,6 +10,15 @@ branch was found in this history UI; availability still depends on the robot.
 Evidence: retained app DEX, the existing entity/model protocol audit, and
 `ProtocolTypes.IMessagesSeverity`. No proprietary source is distributed here.
 
+Beta.5 rechecked the retained app's history view: it loads the first ten entries
+and subsequent chunks on Show More. Our automatic cache still fetches up to 50
+entries, but now releases the command lock between reads so controls can proceed.
+Each wire transaction remains serialized. Count/head validation and the overall
+60-second timeout remain; failed/changed snapshots are not published as complete.
+This is not an atomic snapshot or the app's on-demand UI pagination behavior.
+Debug logs identify history command/index/result and elapsed time, while generic
+command logs distinguish lock wait from execution without recording payloads.
+
 ## Read it in Home Assistant
 
 After installing a version containing this feature, open Developer Tools →

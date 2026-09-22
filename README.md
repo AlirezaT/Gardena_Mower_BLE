@@ -29,12 +29,22 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.4
+### Testing prerelease — v3.94.0-beta.5
+
+Beta.5 keeps beta.4's P0 Start sequence, now confirmed working by the City owner
+in #11. History fetches release the command lock between entries so waiting
+controls can proceed. New debug logs separate command-lock wait from execution
+time and identify history command/index failures without logging payloads.
+Reconnect messages now appear only when a session actually needs reconnecting.
+This is a targeted investigation of slow polling/history failures, not a claim
+that all state-update delays are fixed. Full-history polling still has a
+60-second budget and retains count/head checks before publishing a snapshot.
 
 Beta.4 aligns P0 timed Start with the app: AUTO → timed override → StartTrigger,
 without the preliminary ClearOverride. Logs record each command's result and
 elapsed time without raw payloads. Minimo and other non-P0 start sequences are
-unchanged. This is a targeted test for #11, not a confirmed reboot/stale-state fix.
+unchanged. The #11 owner reports successful departure without reboot on beta.4;
+the shortened log does not establish that every stale-state issue is resolved.
 
 Adds the app's optional Planner restriction-reason read for generation 3/4 mowers.
 The raw code is included in debug polls and downloaded diagnostics alongside
@@ -50,9 +60,9 @@ mower reboot cause. P0 firmware-dependent settings
 also understand full main-application package strings, using the app's version
 suffix rather than the component prefix. Unknown formats remain conservative.
 
-Manifest: `3.94.0-beta.4`. Enable prereleases in HACS, install and restart HA.
+Manifest: `3.94.0-beta.5`. Enable prereleases in HACS, install and restart HA.
 No blueprint or proxy firmware update is needed. Stable remains `v3.93`.
-See [beta notes and test instructions](docs/release-3.94.0-beta.4.md).
+See [beta notes and test instructions](docs/release-3.94.0-beta.5.md).
 
 ### Current stable release — v3.93
 

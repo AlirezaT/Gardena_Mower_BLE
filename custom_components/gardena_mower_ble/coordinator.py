@@ -245,10 +245,10 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_request_refresh()
 
     async def _async_find_device(self):
-        LOGGER.debug("Trying to reconnect")
         async with self.mower.lock:
             if self.mower.is_connected():
                 return
+            LOGGER.debug("Mower session not ready; reconnecting")
             await self.mower.disconnect()
             await close_stale_connections_by_address(self.address)
             device = bluetooth.async_ble_device_from_address(
@@ -521,7 +521,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (RuntimeError, ValueError, IndexError, BleakError, TimeoutError) as err:
             # Preserve the last complete log, without making it look current.
             data["error_history_status"] = "stale" if cached is not None else "unavailable"
-            LOGGER.debug("Unable to refresh mower history: %s", err)
+            LOGGER.debug("Unable to refresh mower history: %s", type(err).__name__)
             return
         data["error_history_snapshot"] = snapshot
         data["error_history_status"] = "ready"

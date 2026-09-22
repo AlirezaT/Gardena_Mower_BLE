@@ -235,6 +235,40 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
             await read_error_history(mower)
         self.assertFalse(mower.lock.locked())
 
+    async def test_history_yields_lock_to_waiting_control(self):
+        mower = self.mower(3)
+        first_read = asyncio.Event()
+        control_waiting = asyncio.Event()
+        order = []
+        original = mower.command_response.side_effect
+
+        async def command(name, **kwargs):
+            if name == "GetMessage":
+                order.append(kwargs["messageId"])
+                if len(order) == 1:
+                    first_read.set()
+                    await control_waiting.wait()
+            return await original(name, **kwargs)
+
+        async def control():
+            await first_read.wait()
+            control_waiting.set()
+            async with mower.lock:
+                order.append("control")
+
+        mower.command_response.side_effect = command
+        history, _ = await asyncio.gather(read_error_history(mower), control())
+        self.assertEqual(order[:3], [0, "control", 1])
+        self.assertEqual(history["returned"], 3)
+
+    async def test_history_logs_failed_index_without_payload(self):
+        mower = self.mower(1)
+        mower.command_response.side_effect = [(R.OK, 1), (R.INVALID_ID, None)]
+        with self.assertLogs("gardena_connection_tests.error_history", "DEBUG") as logs:
+            with self.assertRaises(RuntimeError):
+                await read_error_history(mower)
+        self.assertIn("GetMessage index=0 outcome=INVALID_ID", "\n".join(logs.output))
+
     async def test_service_registration_and_response(self):
         # Execute the actual HA registration function using lightweight HA fakes.
         import voluptuous as vol
