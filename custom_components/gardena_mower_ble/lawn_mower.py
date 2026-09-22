@@ -1,7 +1,7 @@
 """The Gardena Autoconnect Bluetooth lawn mower platform."""
 
-import asyncio
 import voluptuous as vol
+from bleak import BleakError
 
 from automower_ble.protocol import (
     ModeOfOperation,
@@ -166,32 +166,23 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         """Start docking."""
         LOGGER.debug("Start docking")
 
-        if not self.coordinator.mower.is_connected():
-            device = bluetooth.async_ble_device_from_address(
-                self.coordinator.hass, self.coordinator.address, connectable=True
-            )
-            if await self.coordinator.mower.connect(device) is not ResponseResult.OK:
-                raise HomeAssistantError("Unable to connect to mower")
-        if self.coordinator.data.get("state") == MowerState.PAUSED:
-            result = await self.coordinator.mower.mower_resume()
+        try:
+            await self.coordinator._async_find_device()
+            result = await self.coordinator.mower.mower_park()
+            if result is ResponseResult.UNKNOWN_ERROR:
+                raise HomeAssistantError(
+                    "Docking could not be confirmed; the mower may already be returning. "
+                    "No command was repeated. Check the mower before retrying."
+                )
             if result is not ResponseResult.OK:
-                raise HomeAssistantError(f"Resume before docking failed: {result.name}")
-            await asyncio.sleep(1)
-
-        result = await self.coordinator.mower.mower_park()
-        if result is not ResponseResult.OK:
-            raise HomeAssistantError(f"Dock failed: {result.name}")
-
-        self.coordinator.update_cached_data(
-            {
-                "activity": MowerActivity.GOING_HOME,
-                "state": MowerState.IN_OPERATION,
-            }
-        )
-        self.coordinator.schedule_action_refresh()
-
-        self._attr_activity = self._get_activity()
-        self.async_write_ha_state()
+                raise HomeAssistantError(f"Dock failed: {result.name}; check the mower display")
+        except (BleakError, TimeoutError) as err:
+            raise HomeAssistantError(
+                "Dock communication failed; check the mower before retrying. No command was repeated."
+            ) from err
+        finally:
+            # Publish actual polled state, not an optimistic GOING_HOME assumption.
+            self.coordinator.schedule_action_refresh()
 
     async def async_pause(self) -> None:
         """Pause mower."""

@@ -173,6 +173,25 @@ availability rule. They remain explicitly unresolved in the table.
 
 ## F. Mower actions and SpotCut
 
+### Scheduled-parking follow-up (beta.6, 2026-09-23)
+
+Retained Android 9.2.0 DEX: `ParkMowerHomeUntilNextScheduledUseCase.execute`
+calls `BluetoothMower.parkUntilNextSchedule`, which constructs the ordered list
+SetMode(AUTO), SetOverrideParkUntilNextStart, StartTrigger. Neither examined
+method branches on P0/P005 or generation. This is distinct from the permanent
+parking generation branch below. Beta.6 applies the shared scheduled sequence
+to recognized G3/G4 profiles, including City and Minimo; unknown profiles refuse
+Dock rather than assuming a model. The existing no-calendar fallback retains
+HOME/StartTrigger for G3 and HOME/ClearOverride/StartTrigger for G4.
+
+Issue #11's beta.5 excerpt shows our old paused-Dock path sending StartTrigger
+before the parking override, then reading MOWING with FORCEDPARK. This supports
+a sequencing bug, not a universal override-priority rule or proven firmware
+explanation. Why Minimo appeared to tolerate the old path is unknown. Fresh
+read-back and synthetic cross-model tests do not replace physical verification.
+
+### Earlier action audit
+
 Sources: `ParkMowerPermanentlyUseCase`, `StartSpotCutUseCase`,
 `StopSpotCutUseCase`, `GetMowerStatusUseCase.getMowingFromAction`,
 `BluetoothMower.parkPermanently/startSpotCut/startSpotCutG3/stopSpotCut/stopSpotCutG3`

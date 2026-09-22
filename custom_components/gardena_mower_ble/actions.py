@@ -4,9 +4,12 @@ import asyncio
 import logging
 from time import monotonic
 
-from automower_ble.protocol import ModeOfOperation, MowerActivity, MowerState, ResponseResult
+from automower_ble.protocol import ModeOfOperation, MowerActivity, MowerState, OverrideAction, ResponseResult
+from bleak import BleakError
 
 _LOGGER = logging.getLogger(__name__)
+PARK_OBSERVATION_SECONDS = 15
+PARK_POLL_SECONDS = 2
 
 
 class ActionMixin:
@@ -97,6 +100,90 @@ class ActionMixin:
                 if result is not ResponseResult.OK:
                     return result
         return ResponseResult.OK
+
+    async def mower_park(self):
+        """Configure the parking target before triggering; never resume mowing first."""
+        generation = self.capabilities.generation
+        if generation not in (3, 4):
+            return ResponseResult.NOT_AVAILABLE
+        async with self.lock:
+            result, state = await self.command_response("GetState", warn_on_error=False)
+            if result is not ResponseResult.OK:
+                return result
+            if state not in (
+                MowerState.PAUSED, MowerState.RESTRICTED,
+                MowerState.IN_OPERATION, MowerState.PENDING_START,
+            ):
+                return ResponseResult.NOT_ALLOWED
+            result, count = await self.command_response("GetNumberOfTasks", warn_on_error=False)
+            if result is not ResponseResult.OK:
+                return result
+            if type(count) is not int or not 0 <= count < 0xFFFFFFFF:
+                return ResponseResult.UNKNOWN_ERROR
+
+            # Retain the existing no-calendar permanent-park fallback.
+            permanent = count == 0
+            commands = [("SetMode", {"mode": ModeOfOperation.HOME if permanent else ModeOfOperation.AUTO})]
+            if not permanent:
+                commands.append(("SetOverrideParkUntilNextStart", {}))
+            elif generation == 4:
+                commands.append(("ClearOverride", {}))
+            result = await self._action_sequence(commands)
+            if result is not ResponseResult.OK:
+                return result
+            result, _ = await self.command_response("StartTrigger", warn_on_error=False)
+            if result not in (ResponseResult.OK, ResponseResult.UNKNOWN_ERROR):
+                return result
+        return await self._confirm_dock(permanent)
+
+    async def _confirm_dock(self, permanent):
+        """Observe fresh parking state on this session without replay or reconnect."""
+        expected_mode = ModeOfOperation.HOME if permanent else ModeOfOperation.AUTO
+        try:
+            async with asyncio.timeout(PARK_OBSERVATION_SECONDS):
+                while self.is_connected():
+                    readings = {}
+                    # Serialize each sample, not the sleep between samples: a
+                    # new Pause/Dock request must be able to take the lock.
+                    async with self.lock:
+                        for command in ("GetMode", "GetOverride", "GetState", "GetActivity"):
+                            if permanent and command == "GetOverride":
+                                continue
+                            result, value = await self.command_response(command, warn_on_error=False)
+                            if result is not ResponseResult.OK:
+                                break
+                            readings[command] = value
+                    override = readings.get("GetOverride")
+                    parked_override = (
+                        isinstance(override, dict)
+                        and not isinstance(override.get("action"), bool)
+                        and override.get("action") == OverrideAction.FORCEDPARK
+                    )
+                    _LOGGER.debug(
+                        "Dock read-back: mode=%s state=%s activity=%s park_override=%s permanent=%s",
+                        readings.get("GetMode"), readings.get("GetState"),
+                        readings.get("GetActivity"), parked_override, permanent,
+                    )
+                    if readings.get("GetState") in (
+                        MowerState.OFF, MowerState.WAIT_FOR_SAFETYPIN, MowerState.STOPPED,
+                        MowerState.ERROR, MowerState.FATAL_ERROR,
+                    ):
+                        return ResponseResult.NOT_ALLOWED
+                    if (
+                        not any(isinstance(readings.get(key), bool) for key in ("GetMode", "GetState", "GetActivity"))
+                        and readings.get("GetMode") == expected_mode
+                        and (permanent or parked_override)
+                        and readings.get("GetState") in (MowerState.IN_OPERATION, MowerState.RESTRICTED)
+                        and readings.get("GetActivity") in (
+                            MowerActivity.GOING_HOME, MowerActivity.PARKED, MowerActivity.CHARGING,
+                        )
+                    ):
+                        return ResponseResult.OK
+                    await asyncio.sleep(PARK_POLL_SECONDS)
+        except (BleakError, TimeoutError):
+            # Ordinary polling handles transport recovery. Do not replay a trigger.
+            _LOGGER.debug("Dock observation ended without confirmation")
+        return ResponseResult.UNKNOWN_ERROR
 
     async def mower_park_permanently(self):
         generation = self.capabilities.generation

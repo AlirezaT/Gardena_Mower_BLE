@@ -29,7 +29,16 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.5
+### Testing prerelease — v3.94.0-beta.6
+
+Beta.6 corrects Dock after Pause: set AUTO and the parking override before sending
+StartTrigger, instead of resuming the previous mowing override first. The app
+uses this same scheduled-parking sequence for P0 City and P005 Minimo; the fix
+applies to recognized G3/G4 profiles. Dock checks fresh parking state and no
+longer forces an optimistic Returning display. A successful command reply alone
+is not confirmation that the mower is returning. Start and SpotCut are unchanged.
+The no-schedule permanent-park fallback keeps its existing generation-specific
+sequence. Physical City and Minimo validation of this Dock change is pending.
 
 Beta.5 keeps beta.4's P0 Start sequence, now confirmed working by the City owner
 in #11. History fetches release the command lock between entries so waiting
@@ -60,9 +69,9 @@ mower reboot cause. P0 firmware-dependent settings
 also understand full main-application package strings, using the app's version
 suffix rather than the component prefix. Unknown formats remain conservative.
 
-Manifest: `3.94.0-beta.5`. Enable prereleases in HACS, install and restart HA.
+Manifest: `3.94.0-beta.6`. Enable prereleases in HACS, install and restart HA.
 No blueprint or proxy firmware update is needed. Stable remains `v3.93`.
-See [beta notes and test instructions](docs/release-3.94.0-beta.5.md).
+See [beta notes and test instructions](docs/release-3.94.0-beta.6.md).
 
 ### Current stable release — v3.93
 
