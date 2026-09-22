@@ -168,7 +168,10 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
 
         try:
             await self.coordinator._async_find_device()
-            result = await self.coordinator.mower.mower_park()
+            result = await self.coordinator.mower.mower_park(
+                mode=self.coordinator.parking_mode,
+                duration_hours=self.coordinator.parking_duration_hours,
+            )
             if result is ResponseResult.UNKNOWN_ERROR:
                 raise HomeAssistantError(
                     "Docking could not be confirmed; the mower may already be returning. "

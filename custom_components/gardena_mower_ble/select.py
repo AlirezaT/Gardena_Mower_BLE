@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GardenaConfigEntry
 from .entity import GardenaMowerBleDescriptorEntity
+from .parking import PARKING_OPTIONS
 
 WIRE_OPTIONS_BY_ID = {
     0: "Right boundary wire",
@@ -46,6 +47,12 @@ class GardenaMowerBleSelectEntityDescription(SelectEntityDescription):
 
 
 DESCRIPTIONS = (
+    GardenaMowerBleSelectEntityDescription(
+        key="ParkingMode", name="Return Home behavior", icon="mdi:home-clock",
+        entity_category=EntityCategory.CONFIG, options=list(PARKING_OPTIONS.values()),
+        set_command="", value_parameter="", options_by_id=PARKING_OPTIONS,
+        ids_by_option={value: key for key, value in PARKING_OPTIONS.items()},
+    ),
     GardenaMowerBleSelectEntityDescription(
         key="SensorControlSensitivity",
         name="SensorControl Sensitivity",
@@ -85,6 +92,9 @@ async def async_setup_entry(
 
     descriptions = []
     for description in DESCRIPTIONS:
+        if description.key == "ParkingMode":
+            descriptions.append(description)
+            continue
         if description.starting_point_id is not None and description.starting_point_id > coordinator.capabilities.point_count:
             continue
         ids = (coordinator.capabilities.sensitivity_ids if description.key == "SensorControlSensitivity"
@@ -124,6 +134,9 @@ class GardenaMowerBleSelect(GardenaMowerBleDescriptorEntity, SelectEntity):
             raise HomeAssistantError(f"Unknown option: {option}")
 
         description = self.entity_description
+        if description.key == "ParkingMode":
+            self.coordinator.set_parking_preference(mode=option)
+            return
         option_id = description.ids_by_option[option]
         request = {
             description.value_parameter: option_id,

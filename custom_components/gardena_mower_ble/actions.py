@@ -6,6 +6,7 @@ from time import monotonic
 
 from automower_ble.protocol import ModeOfOperation, MowerActivity, MowerState, OverrideAction, ResponseResult
 from bleak import BleakError
+from .parking import INDEFINITE, TIMED, NEXT_SCHEDULE, PARKING_OPTIONS, validate_parking_duration
 
 _LOGGER = logging.getLogger(__name__)
 PARK_OBSERVATION_SECONDS = 15
@@ -101,8 +102,11 @@ class ActionMixin:
                     return result
         return ResponseResult.OK
 
-    async def mower_park(self):
+    async def mower_park(self, mode=INDEFINITE, duration_hours=3):
         """Configure the parking target before triggering; never resume mowing first."""
+        if mode not in PARKING_OPTIONS.values():
+            raise ValueError("Unknown parking mode")
+        duration = validate_parking_duration(duration_hours) if mode == TIMED else None
         generation = self.capabilities.generation
         if generation not in (3, 4):
             return ResponseResult.NOT_AVAILABLE
@@ -115,17 +119,24 @@ class ActionMixin:
                 MowerState.IN_OPERATION, MowerState.PENDING_START,
             ):
                 return ResponseResult.NOT_ALLOWED
-            result, count = await self.command_response("GetNumberOfTasks", warn_on_error=False)
+            result, current_mode = await self.command_response("GetMode", warn_on_error=False)
             if result is not ResponseResult.OK:
                 return result
-            if type(count) is not int or not 0 <= count < 0xFFFFFFFF:
+            if isinstance(current_mode, bool) or current_mode not in (ModeOfOperation.AUTO, ModeOfOperation.HOME):
                 return ResponseResult.UNKNOWN_ERROR
-
-            # Retain the existing no-calendar permanent-park fallback.
-            permanent = count == 0
+            # Return Home must never weaken an existing indefinite hold. Start or
+            # Resume schedule is the explicit way to leave HOME mode.
+            permanent = mode == INDEFINITE or current_mode == ModeOfOperation.HOME
+            _LOGGER.debug("Dock policy: requested=%s effective_indefinite=%s", mode, permanent)
+            if mode == NEXT_SCHEDULE and not permanent:
+                result, count = await self.command_response("GetNumberOfTasks", warn_on_error=False)
+                if result is not ResponseResult.OK:
+                    return result
+                if type(count) is not int or not 0 < count <= 15:
+                    return ResponseResult.NOT_AVAILABLE
             commands = [("SetMode", {"mode": ModeOfOperation.HOME if permanent else ModeOfOperation.AUTO})]
             if not permanent:
-                commands.append(("SetOverrideParkUntilNextStart", {}))
+                commands.append(("SetOverridePark", {"duration": int(duration * 3600)}) if mode == TIMED else ("SetOverrideParkUntilNextStart", {}))
             elif generation == 4:
                 commands.append(("ClearOverride", {}))
             result = await self._action_sequence(commands)

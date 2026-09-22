@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 from automower_ble.protocol import Command, ResponseResult, TaskInformation
 from test_connection import Mower
 from test_model_capabilities import model
-from gardena_connection_tests.schedule import DAYS, task_key, validate_tasks
+from gardena_connection_tests.schedule import DAYS, SecondTask, task_key, validate_tasks
 from gardena_connection_tests.settings_protocol import corrected_protocol
 
 
@@ -18,8 +18,8 @@ def task(start=480, duration=60, day=0):
 def raw_task(value):
     start, duration, *days = task_key(value)
     return dict(
-        start=start * 60,
-        duration=duration * 60,
+        start=start,
+        duration=duration,
         **{f"useOn{day}": enabled for day, enabled in zip(DAYS, days, strict=True)},
     )
 
@@ -44,9 +44,9 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
                 state["pending"] = []
             elif name == "AddTask":
                 state["pending"].append(
-                    TaskInformation(
-                        kwargs["start"] // 60,
-                        kwargs["duration"] // 60,
+                    SecondTask(
+                        kwargs["start"],
+                        kwargs["duration"],
                         *(kwargs[f"useOn{day}"] for day in DAYS),
                     )
                 )
@@ -191,8 +191,8 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(request[18:-2]), 15)
             self.assertEqual(request[26:-2], bytes((1, 0, 0, 0, 0, 0, 0)))
 
-    async def test_malformed_and_nonminute_times_rejected(self):
-        for invalid in ({"start": 30}, {"duration": 61}, {"useOnMonday": 2}):
+    async def test_malformed_times_rejected(self):
+        for invalid in ({"start": -1}, {"duration": 0}, {"useOnMonday": 2}):
             mower, _ = self.mower()
             mower.command_response = AsyncMock(
                 side_effect=[
@@ -202,3 +202,14 @@ class ScheduleTests(unittest.IsolatedAsyncioTestCase):
             )
             with self.assertRaises(RuntimeError):
                 await mower.get_tasks()
+
+    async def test_seconds_survive_read_and_edit_of_another_entry(self):
+        precise = SecondTask(16 * 3600 + 32 * 60 + 35, 3617, True, False, False, False, False, False, False)
+        mower, state = self.mower([precise, task(600)])
+        previous = await mower.get_tasks()
+        self.assertEqual(task_key(previous[0]), task_key(precise))
+        await mower.set_tasks([previous[0], task(700)], expected=previous)
+        self.assertEqual(task_key(state["tasks"][0]), task_key(precise))
+        writes = [values for name, values in state["calls"] if name == "AddTask"]
+        self.assertEqual((writes[0]["start"], writes[0]["duration"]), (59555, 3617))
+        self.assertNotIn("StartTrigger", [name for name, _ in state["calls"]])

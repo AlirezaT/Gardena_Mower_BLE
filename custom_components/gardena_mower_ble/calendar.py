@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import math
 import re
 from typing import Any
 
@@ -22,6 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from . import GardenaConfigEntry
 from .entity import GardenaMowerBleEntity
+from .schedule import SecondTask, task_seconds
 
 SUMMARY = "Mowing schedule"
 UID_PREFIX = "gardena-mower-task-"
@@ -66,6 +66,16 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
             f"{coordinator.address}_{coordinator.channel_id}_schedule"
         )
         self._tasks: list[TaskInformation] = []
+        self._schedule_loaded = False
+        self._schedule_error = None
+
+    @property
+    def should_poll(self) -> bool:
+        return True
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._schedule_loaded and self._schedule_error is None
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -77,7 +87,10 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         """Return schedule details as entity attributes."""
         next_event = self._next_event()
         return {
-            "schedule_count": len(self._tasks),
+            "schedule_count": len(self._tasks) if self._schedule_loaded else None,
+            "schedule_status": "unavailable" if self._schedule_error else "ready" if self._schedule_loaded else "not_loaded",
+            "schedule_error": self._schedule_error,
+            "raw_schedules": [dict(start=task_seconds(t)[0], duration=task_seconds(t)[1], days=_task_days(t)) for t in self._tasks],
             "next_start": (
                 next_event.start_datetime_local.isoformat() if next_event else None
             ),
@@ -100,7 +113,11 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
 
     async def async_update(self) -> None:
         """Fetch schedule data from the mower."""
-        self._tasks = await self._async_get_tasks()
+        try:
+            self._tasks = await self._async_get_tasks()
+        except HomeAssistantError:
+            # Keep the entity registered and last snapshot intact; retry on poll.
+            pass
 
     async def async_get_events(
         self,
@@ -160,13 +177,16 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
 
     async def _async_get_tasks(self) -> list[TaskInformation]:
         """Fetch all tasks, reconnecting first if needed."""
-        if not self.coordinator.mower.is_connected():
-            await self.coordinator._async_find_device()
-
         try:
-            return await self.coordinator.mower.get_tasks()
+            if not self.coordinator.mower.is_connected():
+                await self.coordinator._async_find_device()
+            tasks = await self.coordinator.mower.get_tasks()
         except Exception as err:
+            self._schedule_error = str(err)
             raise HomeAssistantError(f"Unable to read mower schedule: {err}") from err
+        self._schedule_loaded = True
+        self._schedule_error = None
+        return tasks
 
     async def _async_set_tasks(self, tasks: list[TaskInformation], *, expected=None) -> None:
         """Write all tasks and refresh HA state."""
@@ -179,6 +199,8 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
             raise HomeAssistantError(f"Unable to update mower schedule: {err}") from err
 
         self._tasks = tasks
+        self._schedule_loaded = True
+        self._schedule_error = None
         self.async_write_ha_state()
         if update_event_listeners := getattr(
             self, "async_update_event_listeners", None
@@ -203,12 +225,9 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
                 if not _task_days(task)[weekday]:
                     continue
 
-                event_start = _local_midnight(day) + dt.timedelta(
-                    minutes=task.start_time_in_minutes
-                )
-                event_end = event_start + dt.timedelta(
-                    minutes=task.duration_in_minutes
-                )
+                start_seconds, duration_seconds = task_seconds(task)
+                event_start = _local_midnight(day) + dt.timedelta(seconds=start_seconds)
+                event_end = event_start + dt.timedelta(seconds=duration_seconds)
                 if event_end <= start_date or event_start >= end_date:
                     continue
 
@@ -237,28 +256,29 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         end = _event_datetime(event, "end", "end_date_time", "dtend")
 
         if start is None and fallback is not None:
-            start_minutes = fallback.start_time_in_minutes
-            duration_minutes = fallback.duration_in_minutes
-            selected_days = _task_days(fallback)
+            start_seconds, duration_seconds = task_seconds(fallback)
+            selected_days = _days_from_rrule(event.get("rrule")) or _task_days(fallback)
         elif start is not None and end is not None:
             start = dt_util.as_local(start)
             end = dt_util.as_local(end)
-            start_minutes = start.hour * 60 + start.minute
-            duration_minutes = math.ceil((end - start).total_seconds() / 60)
+            if start.microsecond or end.microsecond:
+                raise HomeAssistantError("Mower schedules support whole seconds, not fractions")
+            start_seconds = start.hour * 3600 + start.minute * 60 + start.second
+            duration_seconds = int((end - start).total_seconds())
             selected_days = _days_from_rrule(event.get("rrule")) or [
                 index == start.weekday() for index in range(7)
             ]
         else:
             raise HomeAssistantError("Mower schedules must use start and end date-times")
 
-        if duration_minutes <= 0:
+        if duration_seconds <= 0:
             raise HomeAssistantError("Schedule duration must be greater than zero")
-        if duration_minutes > 24 * 60:
+        if duration_seconds > 86400:
             raise HomeAssistantError("Schedule duration cannot be longer than 24 hours")
 
-        return TaskInformation(
-            start_minutes,
-            duration_minutes,
+        return SecondTask(
+            start_seconds,
+            duration_seconds,
             selected_days[0],
             selected_days[1],
             selected_days[2],
@@ -303,12 +323,12 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
             raise HomeAssistantError(f"Unknown mower schedule uid: {uid}")
 
         recurrence_start = dt_util.as_local(recurrence_start)
-        start_minutes = recurrence_start.hour * 60 + recurrence_start.minute
+        start_seconds = recurrence_start.hour * 3600 + recurrence_start.minute * 60 + recurrence_start.second
         weekday = recurrence_start.weekday()
         matches = [
             index
             for index, task in enumerate(tasks)
-            if task.start_time_in_minutes == start_minutes and _task_days(task)[weekday]
+            if task_seconds(task)[0] == start_seconds and _task_days(task)[weekday]
         ]
         if len(matches) != 1:
             raise HomeAssistantError(f"Unknown mower schedule uid: {uid}")
@@ -346,10 +366,11 @@ def _task_rrule(task: TaskInformation) -> str:
 
 def _task_description(task: TaskInformation) -> str:
     """Return a human-friendly task description."""
-    start = _format_minutes(task.start_time_in_minutes)
-    stop_time = task.start_time_in_minutes + task.duration_in_minutes
-    end = _format_minutes(stop_time)
-    if stop_time > 24 * 60:
+    start_seconds, duration_seconds = task_seconds(task)
+    start = _format_seconds(start_seconds)
+    stop_time = start_seconds + duration_seconds
+    end = _format_seconds(stop_time)
+    if stop_time >= 86400:
         end = f"next day {end}"
     days = ", ".join(
         day_name.title()
@@ -359,10 +380,11 @@ def _task_description(task: TaskInformation) -> str:
     return f"{start}-{end} on {days}"
 
 
-def _format_minutes(minutes: int) -> str:
-    """Format minutes after midnight as HH:MM."""
-    minutes = minutes % (24 * 60)
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+def _format_seconds(seconds: int) -> str:
+    """Include seconds when present; never imply a rounded wire value."""
+    seconds %= 86400
+    text = f"{seconds // 3600:02d}:{seconds // 60 % 60:02d}"
+    return text + (f":{seconds % 60:02d}" if seconds % 60 else "")
 
 
 def _event_datetime(event: dict[str, Any], *keys: str) -> dt.datetime | None:

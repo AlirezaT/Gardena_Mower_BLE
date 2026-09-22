@@ -311,9 +311,11 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(base, {"GetZoneProtectSettings": {"major": 6050}})
 
     async def test_select_setup_filters_real_descriptors(self):
+        from gardena_connection_tests.parking import PARKING_OPTIONS
         # Execute the actual setup function with lightweight HA stand-ins.
         tree = ast.parse((COMPONENT / "select.py").read_text())
         namespace = {
+            "PARKING_OPTIONS": PARKING_OPTIONS,
             "HomeAssistant": object,
             "GardenaConfigEntry": object,
             "AddConfigEntryEntitiesCallback": object,
@@ -373,6 +375,7 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
             coordinator = SimpleNamespace(
                 capabilities=model(device_type),
                 data={
+                    "ParkingMode": 0,
                     "SensorControlSensitivity": 3,
                     **{f"StartingPoint{point}Wire": 2 for point in range(1, 6)},
                 },
@@ -382,6 +385,9 @@ class ModelCapabilityTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(runtime_data=coordinator),
                 lambda entities: created.extend(entities),
             )
+            self.assertEqual(created[0].key, "ParkingMode")
+            self.assertEqual(created[0].options, list(namespace["PARKING_OPTIONS"].values()))
+            created = created[1:]
             self.assertEqual(created[0].options if created else [], expected)
             self.assertEqual(
                 len(created), model(device_type).point_count + bool(expected)

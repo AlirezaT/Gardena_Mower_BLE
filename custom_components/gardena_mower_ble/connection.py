@@ -153,7 +153,9 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
 
     async def mower_next_start_time(self, timezone=None):
         value = await self.command("GetNextStartTime")
-        return local_timestamp(value, timezone)
+        decoded = local_timestamp(value, timezone)
+        _LOGGER.debug("Next start: raw_device_seconds=%s decoded=%s", value, decoded)
+        return decoded
 
     async def connect(self, device):
         async with self.lock:

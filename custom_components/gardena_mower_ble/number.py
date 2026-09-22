@@ -36,6 +36,12 @@ class GardenaMowerBleNumberEntityDescription(NumberEntityDescription):
 
 DESCRIPTIONS = (
     GardenaMowerBleNumberEntityDescription(
+        key="ParkingDuration", name="Parking duration", icon="mdi:timer-pause-outline",
+        native_min_value=0.5, native_max_value=24, native_step=0.5,
+        native_unit_of_measurement=UnitOfTime.HOURS, mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG, set_command="", value_parameter="duration",
+    ),
+    GardenaMowerBleNumberEntityDescription(
         key="ManualMowingDuration",
         name="Manual Mowing Duration",
         icon="mdi:timer-play-outline",
@@ -167,6 +173,9 @@ class GardenaMowerBleNumber(GardenaMowerBleDescriptorEntity, NumberEntity):
         """Set the number value."""
         description = self.entity_description
         LOGGER.debug("Setting %s to %s", description.key, value)
+        if description.key == "ParkingDuration":
+            self.coordinator.set_parking_preference(duration=value)
+            return
         if description.key == "ManualMowingDuration":
             self.coordinator.set_manual_mowing_duration(value)
             return

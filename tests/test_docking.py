@@ -14,6 +14,7 @@ from automower_ble.protocol import ResponseResult as R
 from test_connection import Mower
 from test_model_capabilities import model
 from test_release_fixes import method
+from gardena_connection_tests.parking import INDEFINITE, NEXT_SCHEDULE, TIMED
 
 MODELS = (14, 18, 22, 25, 29, 30, 34, 35, 36, 37, 43)
 
@@ -40,25 +41,25 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
         mower.command_response_locked = mower.command_response
         self.assertIs(await mower.mower_override(3), R.OK)
         await mower.command_response("Pause")
-        self.assertIs(await mower.mower_park(), R.OK)
+        self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.OK)
         self.assertEqual(trigger_overrides, [Override.FORCEDMOW, Override.FORCEDPARK])
 
     async def test_readback_transport_loss_and_cancellation_do_not_repeat_trigger(self):
         for error in (BleakError, asyncio.CancelledError):
-            mower, _ = self.mower()
+            mower, reads = self.mower()
             original = mower.command_response.side_effect
 
             async def reply(name, **kwargs):
-                if name == "GetMode":
+                if name == "GetMode" and reads["GetState"] == State.IN_OPERATION:
                     raise error("lost")
                 return await original(name, **kwargs)
 
             mower.command_response.side_effect = reply
             if error is asyncio.CancelledError:
                 with self.assertRaises(error):
-                    await mower.mower_park()
+                    await mower.mower_park(mode=NEXT_SCHEDULE)
             else:
-                self.assertIs(await mower.mower_park(), R.UNKNOWN_ERROR)
+                self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.UNKNOWN_ERROR)
             self.assertFalse(mower.lock.locked())
             self.assertEqual([c.args[0] for c in mower.command_response.await_args_list].count("StartTrigger"), 1)
 
@@ -69,12 +70,14 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
         reads = {
             "GetState": State.PAUSED,
             "GetNumberOfTasks": count,
-            "GetMode": Mode.HOME if count == 0 else Mode.AUTO,
+            "GetMode": Mode.AUTO,
             "GetOverride": {"action": Override.FORCEDPARK},
             "GetActivity": activity,
         }
 
         async def reply(command, **kwargs):
+            if command == "SetMode":
+                reads["GetMode"] = kwargs["mode"]
             if command == "StartTrigger":
                 reads["GetState"] = State.IN_OPERATION
                 return trigger, None
@@ -88,14 +91,14 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             for state in (State.PAUSED, State.IN_OPERATION, State.RESTRICTED):
                 mower, reads = self.mower(device_type)
                 reads["GetState"] = state
-                self.assertIs(await mower.mower_park(), R.OK)
+                self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.OK)
                 calls = mower.command_response.await_args_list
                 self.assertEqual([c.args[0] for c in calls], [
-                    "GetState", "GetNumberOfTasks", "SetMode",
+                    "GetState", "GetMode", "GetNumberOfTasks", "SetMode",
                     "SetOverrideParkUntilNextStart", "StartTrigger",
                     "GetMode", "GetOverride", "GetState", "GetActivity",
                 ])
-                self.assertEqual(calls[2].kwargs["mode"], Mode.AUTO)
+                self.assertEqual(calls[3].kwargs["mode"], Mode.AUTO)
 
     async def test_no_calendar_keeps_generation_specific_permanent_sequence(self):
         for device_type in MODELS:
@@ -116,36 +119,36 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
                     return (R.DEVICE_BUSY, None) if name == command else await original(name, **kwargs)
 
                 mower.command_response.side_effect = reply
-                self.assertIs(await mower.mower_park(), R.DEVICE_BUSY)
+                self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.DEVICE_BUSY)
                 names = [c.args[0] for c in mower.command_response.await_args_list]
                 self.assertEqual(names[-1], command)
                 self.assertNotIn("StartTrigger", names)
 
     async def test_unknown_profiles_safety_states_and_bad_counts_do_not_write(self):
         mower, _ = self.mower(99)
-        self.assertIs(await mower.mower_park(), R.NOT_AVAILABLE)
+        self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.NOT_AVAILABLE)
         mower.command_response.assert_not_awaited()
         for state in (State.OFF, State.STOPPED, State.WAIT_FOR_SAFETYPIN, State.ERROR, State.FATAL_ERROR, None):
             mower, reads = self.mower()
             reads["GetState"] = state
-            self.assertIs(await mower.mower_park(), R.NOT_ALLOWED)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.NOT_ALLOWED)
             self.assertEqual(mower.command_response.await_count, 1)
         for count in (None, True, -1, "1", 0xFFFFFFFF):
             mower, _ = self.mower(count=count)
-            self.assertIs(await mower.mower_park(), R.UNKNOWN_ERROR)
-            self.assertEqual(mower.command_response.await_count, 2)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.NOT_AVAILABLE)
+            self.assertEqual(mower.command_response.await_count, 3)
 
     async def test_ambiguous_trigger_requires_fresh_park_confirmation(self):
         for device_type in (14, 29):
             for activity in (Activity.GOING_HOME, Activity.PARKED, Activity.CHARGING):
                 mower, _ = self.mower(device_type, trigger=R.UNKNOWN_ERROR, activity=activity)
-                self.assertIs(await mower.mower_park(), R.OK)
+                self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.OK)
                 self.assertEqual([c.args[0] for c in mower.command_response.await_args_list].count("StartTrigger"), 1)
 
     async def test_explicit_trigger_failure_is_not_overridden_by_readback(self):
         for result in (R.NOT_ALLOWED, R.DEVICE_BUSY, R.INVALID_ID):
             mower, _ = self.mower(trigger=result)
-            self.assertIs(await mower.mower_park(), result)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), result)
             self.assertEqual(mower.command_response.await_args_list[-1].args[0], "StartTrigger")
 
     async def test_mowing_after_acknowledgement_is_observed_without_replay(self):
@@ -155,7 +158,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             reads["GetActivity"] = Activity.GOING_HOME
 
         with patch("gardena_connection_tests.actions.asyncio.sleep", side_effect=settle) as sleep:
-            self.assertIs(await mower.mower_park(), R.OK)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.OK)
         sleep.assert_awaited_once()
         self.assertEqual([c.args[0] for c in mower.command_response.await_args_list].count("StartTrigger"), 1)
 
@@ -178,23 +181,23 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
 
             mower.command_response.side_effect = reply
             with patch("gardena_connection_tests.actions.asyncio.sleep", side_effect=TimeoutError):
-                self.assertIs(await mower.mower_park(), R.UNKNOWN_ERROR)
-        mower, _ = self.mower()
+                self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.UNKNOWN_ERROR)
+        mower, reads = self.mower()
         original = mower.command_response.side_effect
 
         async def bad_read(name, **kwargs):
-            if name == "GetMode":
+            if name == "GetMode" and reads["GetState"] == State.IN_OPERATION:
                 return R.DEVICE_BUSY, Mode.AUTO
             return await original(name, **kwargs)
 
         mower.command_response.side_effect = bad_read
         with patch("gardena_connection_tests.actions.asyncio.sleep", side_effect=TimeoutError):
-            self.assertIs(await mower.mower_park(), R.UNKNOWN_ERROR)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.UNKNOWN_ERROR)
 
     async def test_observation_timeout_does_not_replay(self):
         mower, _ = self.mower(activity=Activity.MOWING)
         with patch("gardena_connection_tests.actions.PARK_OBSERVATION_SECONDS", 0.01):
-            self.assertIs(await mower.mower_park(), R.UNKNOWN_ERROR)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.UNKNOWN_ERROR)
         self.assertFalse(mower.lock.locked())
         self.assertEqual([c.args[0] for c in mower.command_response.await_args_list].count("StartTrigger"), 1)
 
@@ -203,7 +206,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             mower, _ = self.mower()
             mower.command_response.side_effect = error("interrupted")
             with self.assertRaises(error):
-                await mower.mower_park()
+                await mower.mower_park(mode=NEXT_SCHEDULE)
             self.assertFalse(mower.lock.locked())
             self.assertEqual(mower.command_response.await_count, 1)
 
@@ -227,7 +230,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
                 order.append("poll")
 
         mower.command_response.side_effect = reply
-        result, _ = await asyncio.gather(mower.mower_park(), poll())
+        result, _ = await asyncio.gather(mower.mower_park(mode=NEXT_SCHEDULE), poll())
         self.assertIs(result, R.OK)
         self.assertGreater(order.index("poll"), order.index("StartTrigger"))
 
@@ -242,7 +245,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             raise TimeoutError
 
         with patch("gardena_connection_tests.actions.asyncio.sleep", side_effect=pause):
-            self.assertIs(await mower.mower_park(), R.UNKNOWN_ERROR)
+            self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.UNKNOWN_ERROR)
         self.assertEqual(reads["GetState"], State.PAUSED)
         self.assertEqual([c.args[0] for c in mower.command_response.await_args_list].count("StartTrigger"), 1)
 
@@ -257,7 +260,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             return result
 
         mower.command_response.side_effect = reply
-        self.assertIs(await mower.mower_park(), R.NOT_ALLOWED)
+        self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.NOT_ALLOWED)
 
     async def test_failed_clear_override_in_empty_calendar_does_not_trigger(self):
         mower, _ = self.mower(29, count=0)
@@ -277,6 +280,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
         })
         for result in (R.OK, R.UNKNOWN_ERROR, R.NOT_ALLOWED):
             coordinator = SimpleNamespace(
+                parking_mode=INDEFINITE, parking_duration_hours=3,
                 _async_find_device=AsyncMock(),
                 mower=SimpleNamespace(mower_park=AsyncMock(return_value=result), mower_resume=AsyncMock()),
                 data={"state": State.PAUSED},
@@ -291,3 +295,32 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             coordinator.mower.mower_resume.assert_not_awaited()
             coordinator.update_cached_data.assert_not_called()
             coordinator.schedule_action_refresh.assert_called_once()
+
+    async def test_default_indefinite_ignores_calendar_and_preserves_hold(self):
+        for device_type in (14, 29):
+            for option in (INDEFINITE, NEXT_SCHEDULE, TIMED):
+                mower, reads = self.mower(device_type, count=5)
+                reads["GetMode"] = Mode.HOME
+                self.assertIs(await mower.mower_park(mode=option), R.OK)
+                calls = mower.command_response.await_args_list
+                self.assertNotIn("GetNumberOfTasks", [c.args[0] for c in calls])
+                self.assertNotIn("SetOverridePark", [c.args[0] for c in calls])
+                self.assertNotIn("SetOverrideParkUntilNextStart", [c.args[0] for c in calls])
+                self.assertTrue(all(c.kwargs["mode"] == Mode.HOME for c in calls if c.args[0] == "SetMode"))
+            mower, _ = self.mower(device_type, count=5)
+            self.assertIs(await mower.mower_park(), R.OK)
+            self.assertNotIn("GetNumberOfTasks", [c.args[0] for c in mower.command_response.await_args_list])
+
+    async def test_timed_parking_duration_and_invalid_inputs(self):
+        for device_type in (14, 29):
+            mower, _ = self.mower(device_type)
+            self.assertIs(await mower.mower_park(mode=TIMED, duration_hours=1.5), R.OK)
+            calls = mower.command_response.await_args_list
+            override = next(c for c in calls if c.args[0] == "SetOverridePark")
+            self.assertEqual(override.kwargs["duration"], 5400)
+            self.assertLess(calls.index(override), next(i for i, c in enumerate(calls) if c.args[0] == "StartTrigger"))
+        for duration in (True, 0, -1, 25, float("nan"), 0.6):
+            mower, _ = self.mower()
+            with self.assertRaises(ValueError):
+                await mower.mower_park(mode=TIMED, duration_hours=duration)
+            mower.command_response.assert_not_awaited()

@@ -29,7 +29,40 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.6
+### Testing prerelease — v3.94.0-beta.7
+
+Return Home now defaults to **Until further notice**, even when the mower has
+onboard schedules. Previously it parked until the next schedule when tasks existed,
+and indefinitely only when there were no tasks.
+
+In the device's configuration entities, **Return Home behavior** offers:
+
+- **Until further notice** (default).
+- **For a duration**, using **Parking duration** (0.5–24 hours, half-hour steps;
+  default 3 hours).
+- **Until next schedule**, requiring an onboard task.
+
+These preferences are saved locally; changing them does not move the mower.
+They apply when Return Home/Dock is requested, including through the mower card.
+An existing indefinite hold is preserved regardless of this selection; use an
+explicit Start or Resume schedule action to release it. Resume can start mowing
+immediately when the planner permits it. SpotCut's start sequence is unchanged;
+its fallback parking after manual stop now also defaults to indefinite parking.
+
+The calendar preserves whole-second schedule times instead of rejecting them or
+rounding them. A failed read leaves the calendar registered but unavailable until
+a successful retry; edits never use a failed read as an empty schedule. Calendar
+attributes expose raw schedule seconds, and debug logs include the mower's raw
+next-start timestamp. These changes do not rewrite the mower's clock or schedule
+and do not claim to fix initial Bluetooth pairing retries.
+
+Manifest: `3.94.0-beta.7`. Install beta.7 in HACS and restart Home Assistant.
+Stable remains `v3.93`. See [release notes](docs/release-3.94.0-beta.7.md).
+After installing, compare the recovered calendar with the official app
+before editing schedules. The source of the reported 16:32:35 next start still
+needs verification using these diagnostics.
+
+### Previous prerelease — v3.94.0-beta.6
 
 Beta.6 corrects Dock after Pause: set AUTO and the parking override before sending
 StartTrigger, instead of resuming the previous mowing override first. The app

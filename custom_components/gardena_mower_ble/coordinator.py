@@ -25,6 +25,7 @@ from .model_diagnostics import (
 )
 from .const import DOMAIN, LOGGER
 from .duration import CONF_MANUAL_MOWING_DURATION, saved_duration, validate_duration
+from .parking import CONF_PARKING_MODE, CONF_PARKING_DURATION, PARKING_OPTIONS, saved_parking, validate_parking_duration
 from .settings_protocol import (
     UNSUPPORTED,
     read_frost_setting,
@@ -82,10 +83,25 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_settings_poll: datetime | None = None
         self._last_diagnostic_poll: datetime | None = None
         self.manual_mowing_duration_hours = saved_duration(config_entry.options)
+        self.parking_mode, self.parking_duration_hours = saved_parking(config_entry.options)
         self._delayed_refresh_cancel = None
         self._delayed_settings_refresh_cancel = None
         self._cache_update_generation = 0
         self._optimistic_update_generations: dict[str, int] = {}
+
+    def set_parking_preference(self, *, mode=None, duration=None) -> None:
+        """Save defaults for a future Dock action, without touching the robot."""
+        new_mode = self.parking_mode if mode is None else mode
+        if new_mode not in PARKING_OPTIONS.values():
+            raise ValueError("Unknown parking mode")
+        new_duration = self.parking_duration_hours if duration is None else validate_parking_duration(duration)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={**self.config_entry.options, CONF_PARKING_MODE: new_mode,
+                     CONF_PARKING_DURATION: new_duration},
+        )
+        self.parking_mode, self.parking_duration_hours = new_mode, new_duration
+        self.update_cached_data({"ParkingMode": next(key for key, value in PARKING_OPTIONS.items() if value == new_mode), "ParkingDuration": new_duration})
 
     def set_manual_mowing_duration(self, value: float) -> None:
         """Persist the virtual setting without changing the mower's mode."""
@@ -270,6 +286,8 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         poll_started_generation = self._cache_update_generation
         data: dict[str, Any] = dict(self._last_data)
         data["ManualMowingDuration"] = self.manual_mowing_duration_hours
+        data["ParkingMode"] = next(key for key, value in PARKING_OPTIONS.items() if value == self.parking_mode)
+        data["ParkingDuration"] = self.parking_duration_hours
         data["modelName"] = self.model
         now = datetime.now()
         poll_realtime = self._poll_due(

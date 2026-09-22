@@ -5,10 +5,36 @@ from automower_ble.protocol import ResponseResult, TaskInformation
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
+class SecondTask(TaskInformation):
+    """Keep wire seconds authoritative; minute properties are compatibility views."""
+
+    def __init__(self, start_seconds, duration_seconds, *days):
+        self.start_seconds = start_seconds
+        self.duration_seconds = duration_seconds
+        for day, enabled in zip(DAYS, days, strict=True):
+            setattr(self, f"on_{day.lower()}", enabled)
+
+    @property
+    def start_time_in_minutes(self):
+        return self.start_seconds / 60
+
+    @property
+    def duration_in_minutes(self):
+        return self.duration_seconds / 60
+
+
+def task_seconds(task):
+    if isinstance(task, SecondTask):
+        return task.start_seconds, task.duration_seconds
+    start, duration = task.start_time_in_minutes, task.duration_in_minutes
+    if type(start) is not int or type(duration) is not int:
+        raise ValueError("Legacy schedule times must be integer minutes")
+    return start * 60, duration * 60
+
+
 def task_key(task):
     return (
-        task.start_time_in_minutes,
-        task.duration_in_minutes,
+        *task_seconds(task),
         *(bool(getattr(task, f"on_{day.lower()}")) for day in DAYS),
     )
 
@@ -29,10 +55,10 @@ def validate_tasks(tasks, capabilities):
         if any(type(day) not in (int, bool) or day not in (0, 1) for day in raw_days):
             raise ValueError("Invalid schedule weekday flags")
         start, duration, *days = task_key(task)
-        if type(start) is not int or not 0 <= start < 1440:
-            raise ValueError("Schedule start must be an integer minute within one day")
-        if type(duration) is not int or not 0 < duration <= 1440:
-            raise ValueError("Schedule duration must be 1–1440 minutes")
+        if type(start) is not int or not 0 <= start < 86400:
+            raise ValueError("Schedule start must be integer seconds within one day")
+        if type(duration) is not int or not 0 < duration <= 86400:
+            raise ValueError("Schedule duration must be 1–86400 seconds")
         for index, enabled in enumerate(days):
             per_day[index] += enabled
     if capabilities.generation == 3 and any(count > 2 for count in per_day):
@@ -87,15 +113,7 @@ class ScheduleMixin:
                         for day in days
                     ):
                         raise ValueError("invalid weekday")
-                    if start % 60 or duration % 60:
-                        raise ValueError(
-                            "schedule cannot be represented losslessly in whole minutes"
-                        )
-                    tasks.append(
-                        TaskInformation(
-                            start // 60, (duration + 59) // 60, *map(bool, days)
-                        )
-                    )
+                    tasks.append(SecondTask(start, duration, *map(bool, days)))
                 except (KeyError, TypeError, ValueError) as err:
                     raise RuntimeError(f"Invalid schedule {index + 1}: {err}") from err
             return tasks
@@ -121,9 +139,10 @@ class ScheduleMixin:
                 await self._expect_ok("StartTaskTransaction")
                 await self._expect_ok("DeleteAllTask")
                 for task in tasks:
+                    start, duration = task_seconds(task)
                     values = {
-                        "start": task.start_time_in_minutes * 60,
-                        "duration": task.duration_in_minutes * 60,
+                        "start": start,
+                        "duration": duration,
                         **{
                             f"useOn{day}": bool(getattr(task, f"on_{day.lower()}"))
                             for day in DAYS
