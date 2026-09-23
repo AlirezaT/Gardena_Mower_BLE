@@ -43,9 +43,11 @@ class Event:
 
 
 def calendar_class():
+    from gardena_connection_tests.traffic import background_poll
     tree = ast.parse((COMPONENT / "calendar.py").read_text())
     tree.body = [n for n in tree.body if isinstance(n, (ast.Assign, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) or isinstance(n, ast.ImportFrom) and n.module == "__future__"]
     namespace = {
+        "background_poll": background_poll,
         "dt": dt, "re": re, "TaskInformation": TaskInformation,
         "SecondTask": SecondTask, "task_seconds": task_seconds,
         "GardenaMowerBleEntity": Base, "CalendarEntity": object,

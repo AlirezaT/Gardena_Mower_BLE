@@ -29,7 +29,23 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.8
+### Testing prerelease — v3.94.0-beta.9
+
+Start and Dock now defer background polling and calendar reads while the command
+and its confirmation are in progress. Keep-alive and explicit user controls
+remain eligible; an already-sent background request is allowed to finish rather
+than cancelled. Failed optional static-information reads have a five-minute retry
+backoff. Reconnect waits up to ten seconds for a connectable advertisement before
+reporting a visibility failure. No movement command is automatically replayed.
+
+The Start/Dock wire sequences and parking preferences are unchanged. This is a
+targeted responsiveness/recovery beta, not a confirmed mower-reboot fix or a fix
+for every direct-Dock failure during departure. Minimo validation comes first.
+Manifest: `3.94.0-beta.9`. Install through HACS and restart Home Assistant.
+Stable remains `v3.93`; no proxy flash or blueprint update is needed.
+See [release notes and test steps](docs/release-3.94.0-beta.9.md).
+
+### Previous prerelease — v3.94.0-beta.8
 
 When Return Home behavior is **Until next schedule**, a successful read confirming
 zero onboard tasks now falls back to **Until further notice**. The saved dropdown

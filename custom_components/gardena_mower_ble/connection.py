@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from contextlib import suppress
+from contextlib import asynccontextmanager, nullcontext, suppress
 from time import monotonic
 
 from automower_ble.mower import Mower as UpstreamMower
@@ -15,6 +15,7 @@ from .schedule import ScheduleMixin
 from .actions import ActionMixin
 from .timestamps import local_timestamp
 from .events import EventMixin
+from .traffic import BACKGROUND_READ, foreground_read
 
 _LOGGER = logging.getLogger(__name__)
 CONNECT_TIMEOUT = 60
@@ -41,6 +42,21 @@ class _TaskLock:
         self._lock = asyncio.Lock()
         self._owner = None
         self._depth = 0
+        self._actions = 0
+        self._background_allowed = asyncio.Event()
+        self._background_allowed.set()
+
+    @asynccontextmanager
+    async def action_window(self):
+        """Reserve traffic priority, not the wire lock, until confirmation ends."""
+        self._actions += 1
+        self._background_allowed.clear()
+        try:
+            yield
+        finally:
+            self._actions -= 1
+            if not self._actions:
+                self._background_allowed.set()
 
     def locked(self):
         return self._lock.locked()
@@ -48,7 +64,14 @@ class _TaskLock:
     async def __aenter__(self):
         task = asyncio.current_task()
         if self._owner is not task:
-            await self._lock.acquire()
+            while True:
+                if BACKGROUND_READ.get():
+                    await self._background_allowed.wait()
+                await self._lock.acquire()
+                # An action may have arrived while this poll waited for the wire.
+                if not BACKGROUND_READ.get() or not self._actions:
+                    break
+                self._lock.release()
             self._owner = task
         self._depth += 1
         return self
@@ -118,6 +141,10 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
         return self._session_ready and super().is_connected()
 
     async def _timed_command(self, method, command_name, **kwargs):
+        with foreground_read() if command_name == "KeepAlive" else nullcontext():
+            return await self._timed_command_inner(method, command_name, **kwargs)
+
+    async def _timed_command_inner(self, method, command_name, **kwargs):
         """Measure local lock wait separately from command execution; omit payloads."""
         started = monotonic()
         acquired = None

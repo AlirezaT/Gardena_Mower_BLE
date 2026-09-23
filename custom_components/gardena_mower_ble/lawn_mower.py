@@ -27,6 +27,7 @@ from .control import start_manual_mowing
 from .coordinator import GardenaCoordinator
 from .entity import GardenaMowerBleEntity
 from .duration import validate_duration
+from .traffic import foreground_action
 
 
 async def async_setup_entry(
@@ -128,6 +129,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             )
         }
 
+    @foreground_action
     async def async_start_mowing(self, duration_hours=None) -> None:
         """Start an explicit run, without overwriting the manual preference."""
         LOGGER.debug("Starting mower")
@@ -162,6 +164,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         self._attr_activity = self._get_activity()
         self.async_write_ha_state()
 
+    @foreground_action
     async def async_dock(self) -> None:
         """Start docking."""
         LOGGER.debug("Start docking")

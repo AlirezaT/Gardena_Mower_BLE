@@ -1,6 +1,7 @@
 """Provides the DataUpdateCoordinator."""
 
 import asyncio
+from time import monotonic
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .connection import Mower, connection_failure
+from .traffic import background_poll
+
 from .error_history import read_error_history, history_signature
 from .presentation import describe_error
 from .model_diagnostics import (
@@ -37,6 +40,9 @@ if TYPE_CHECKING:
     from . import GardenaConfigEntry
 
 SCAN_INTERVAL = timedelta(seconds=20)
+DISCOVERY_WAIT_SECONDS = 10
+DISCOVERY_POLL_SECONDS = 0.5
+STATIC_RETRY_SECONDS = 300
 REALTIME_POLL_INTERVAL = timedelta(minutes=1)
 SETTINGS_POLL_INTERVAL = timedelta(minutes=2)
 DIAGNOSTIC_POLL_INTERVAL = timedelta(minutes=5)
@@ -77,6 +83,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._zone_protect_supported = self.capabilities.zone_group is not None
         self._unsupported_static_commands: set[str] = set()
         self._static_data: dict[str, Any] = {}
+        self._static_retry_after: dict[str, float] = {}
         self._last_data: dict[str, Any] = {}
         self._last_successful_update: datetime | None = None
         self._last_realtime_poll: datetime | None = None
@@ -272,13 +279,26 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             try:
                 if device is None:
-                    raise UpdateFailed("Mower is not visible to a connectable Bluetooth adapter/proxy")
+                    LOGGER.debug("Waiting up to %ss for a connectable mower advertisement", DISCOVERY_WAIT_SECONDS)
+                    try:
+                        async with asyncio.timeout(DISCOVERY_WAIT_SECONDS):
+                            while device is None:
+                                await asyncio.sleep(DISCOVERY_POLL_SECONDS)
+                                device = bluetooth.async_ble_device_from_address(
+                                    self.hass, self.address, connectable=True
+                                )
+                    except TimeoutError as err:
+                        raise UpdateFailed(
+                            "Mower is not visible to a connectable Bluetooth adapter/proxy "
+                            "after waiting for rediscovery; no movement command was sent"
+                        ) from err
                 result = await self.mower.connect(device)
                 if result is not ResponseResult.OK:
                     raise UpdateFailed(connection_failure(result))
             except BleakError as err:
                 raise UpdateFailed(f"Mower Bluetooth connection failed: {err}") from err
 
+    @background_poll
     async def _async_update_data(self) -> dict[str, Any]:
         """Poll the device."""
         LOGGER.debug("Polling device")
@@ -574,6 +594,11 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for command_name in command_names:
                 if command_name in self._unsupported_static_commands:
                     continue
+                if monotonic() < self._static_retry_after.get(command_name, 0):
+                    continue
+                # Reserve the retry window before sending, including on timeout.
+                # A missing reply is not evidence that the command is unsupported.
+                self._static_retry_after[command_name] = monotonic() + STATIC_RETRY_SECONDS
                 try:
                     result, value = await self.mower.command_response(
                         command_name, warn_on_error=False
@@ -603,6 +628,7 @@ class GardenaCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if type(value) is not int or not 0 < value < 0xFFFFFFFF:
                         continue
                 self._static_data[key] = value
+                self._static_retry_after.pop(command_name, None)
                 break
 
         data.update(self._static_data)

@@ -22,6 +22,7 @@ from homeassistant.util import dt as dt_util
 from . import GardenaConfigEntry
 from .entity import GardenaMowerBleEntity
 from .schedule import SecondTask, task_seconds
+from .traffic import background_poll
 
 SUMMARY = "Mowing schedule"
 UID_PREFIX = "gardena-mower-task-"
@@ -111,6 +112,7 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
         ]
         return current_or_next[0] if current_or_next else None
 
+    @background_poll
     async def async_update(self) -> None:
         """Fetch schedule data from the mower."""
         try:
@@ -119,6 +121,7 @@ class GardenaMowerScheduleCalendar(GardenaMowerBleEntity, CalendarEntity):
             # Keep the entity registered and last snapshot intact; retry on poll.
             pass
 
+    @background_poll
     async def async_get_events(
         self,
         hass: HomeAssistant,
