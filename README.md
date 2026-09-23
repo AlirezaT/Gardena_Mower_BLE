@@ -29,7 +29,18 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.7
+### Testing prerelease — v3.94.0-beta.8
+
+When Return Home behavior is **Until next schedule**, a successful read confirming
+zero onboard tasks now falls back to **Until further notice**. The saved dropdown
+selection stays unchanged. Failed or malformed schedule reads still stop the
+command; they are never treated as an empty schedule. Adding a schedule later
+does not release the indefinite hold: use Start or Resume schedule explicitly.
+
+Manifest: `3.94.0-beta.8`. Install beta.8 in HACS and restart Home Assistant.
+Stable remains `v3.93`. See [release notes](docs/release-3.94.0-beta.8.md).
+
+### Previous prerelease — v3.94.0-beta.7
 
 Return Home now defaults to **Until further notice**, even when the mower has
 onboard schedules. Previously it parked until the next schedule when tasks existed,

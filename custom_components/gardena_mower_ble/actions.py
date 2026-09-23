@@ -127,13 +127,16 @@ class ActionMixin:
             # Return Home must never weaken an existing indefinite hold. Start or
             # Resume schedule is the explicit way to leave HOME mode.
             permanent = mode == INDEFINITE or current_mode == ModeOfOperation.HOME
-            _LOGGER.debug("Dock policy: requested=%s effective_indefinite=%s", mode, permanent)
             if mode == NEXT_SCHEDULE and not permanent:
                 result, count = await self.command_response("GetNumberOfTasks", warn_on_error=False)
                 if result is not ResponseResult.OK:
                     return result
-                if type(count) is not int or not 0 < count <= 15:
+                if type(count) is not int or not 0 <= count <= 15:
                     return ResponseResult.NOT_AVAILABLE
+                if count == 0:
+                    permanent = True
+                    _LOGGER.debug("No onboard tasks: parking until further notice instead of until next schedule")
+            _LOGGER.debug("Dock policy: requested=%s effective_indefinite=%s", mode, permanent)
             commands = [("SetMode", {"mode": ModeOfOperation.HOME if permanent else ModeOfOperation.AUTO})]
             if not permanent:
                 commands.append(("SetOverridePark", {"duration": int(duration * 3600)}) if mode == TIMED else ("SetOverrideParkUntilNextStart", {}))

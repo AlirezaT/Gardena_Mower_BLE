@@ -109,6 +109,22 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([c.args[0] for c in writes], expected)
             self.assertEqual(writes[0].kwargs["mode"], Mode.HOME)
 
+    async def test_empty_schedule_falls_back_to_indefinite_for_all_profiles(self):
+        for device_type in MODELS:
+            with self.subTest(device_type=device_type):
+                mower, _ = self.mower(device_type, count=0)
+                self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.OK)
+                calls = mower.command_response.await_args_list
+                writes = [c for c in calls if c.args[0] not in (
+                    "GetState", "GetMode", "GetNumberOfTasks", "GetActivity", "GetOverride",
+                )]
+                expected = ["SetMode"]
+                if mower.capabilities.generation == 4:
+                    expected.append("ClearOverride")
+                expected.append("StartTrigger")
+                self.assertEqual([c.args[0] for c in writes], expected)
+                self.assertEqual(writes[0].kwargs["mode"], Mode.HOME)
+
     async def test_preparation_failures_stop_without_trigger(self):
         for device_type in (14, 29):
             for command in ("GetState", "GetNumberOfTasks", "SetMode", "SetOverrideParkUntilNextStart"):
@@ -133,7 +149,7 @@ class DockTests(unittest.IsolatedAsyncioTestCase):
             reads["GetState"] = state
             self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.NOT_ALLOWED)
             self.assertEqual(mower.command_response.await_count, 1)
-        for count in (None, True, -1, "1", 0xFFFFFFFF):
+        for count in (None, True, False, -1, "1", 0.0, 16, 0xFFFFFFFF):
             mower, _ = self.mower(count=count)
             self.assertIs(await mower.mower_park(mode=NEXT_SCHEDULE), R.NOT_AVAILABLE)
             self.assertEqual(mower.command_response.await_count, 3)
