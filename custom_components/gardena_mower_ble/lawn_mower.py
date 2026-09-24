@@ -139,12 +139,13 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
                 self.coordinator.manual_mowing_duration_hours
                 if duration_hours is None else duration_hours
             )
-            await start_manual_mowing(
+            observed = await start_manual_mowing(
                 self.coordinator.mower,
                 duration,
                 self.coordinator._async_find_device,
             )
         except Exception as err:
+            self.coordinator.schedule_action_refresh()
             raise HomeAssistantError(str(err)) from err
         self.coordinator.hass.config_entries.async_update_entry(
             self.coordinator.config_entry,
@@ -153,8 +154,8 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
         )
         self.coordinator.update_cached_data(
             {
-                "activity": MowerActivity.MOWING,
-                "state": MowerState.IN_OPERATION,
+                "activity": observed[1] if isinstance(observed, tuple) else MowerActivity.MOWING,
+                "state": observed[0] if isinstance(observed, tuple) else MowerState.IN_OPERATION,
                 "mode": ModeOfOperation.AUTO,
                 "permanentPark": False,
             }
@@ -190,6 +191,7 @@ class AutomowerLawnMower(GardenaMowerBleEntity, LawnMowerEntity):
             # Publish actual polled state, not an optimistic GOING_HOME assumption.
             self.coordinator.schedule_action_refresh()
 
+    @foreground_action
     async def async_pause(self) -> None:
         """Pause mower."""
         LOGGER.debug("Pausing mower")

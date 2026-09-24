@@ -16,6 +16,7 @@ from .actions import ActionMixin
 from .timestamps import local_timestamp
 from .events import EventMixin
 from .traffic import BACKGROUND_READ, foreground_read
+from .tracing import REQUEST_TRACE, action_id
 
 _LOGGER = logging.getLogger(__name__)
 CONNECT_TIMEOUT = 60
@@ -98,6 +99,12 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
         self._pairing_pending = False
         self._pairing_result = None
         self.connection_diagnostics = {"outcome": "not_attempted"}
+        self._action_sequence_id = 0
+        self.session_id = 0
+
+    @property
+    def action_id(self):
+        return action_id(self)
 
     def _capture_connection_source(self):
         """Read only allowlisted metadata from the actual client, not discovery."""
@@ -149,9 +156,13 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
         started = monotonic()
         acquired = None
         outcome = "completed"
+        trace = {"mower": self, "source": "not_sent", "wire_result": None}
+        token = REQUEST_TRACE.set(trace)
+        session = self.session_id
         try:
             async with self.lock:
                 acquired = monotonic()
+                session = self.session_id
                 result = await method(command_name, **kwargs)
                 if isinstance(result, tuple) and result and isinstance(result[0], ResponseResult):
                     outcome = result[0].name
@@ -164,11 +175,14 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
         finally:
             finished = monotonic()
             _LOGGER.debug(
-                "Mower command %s: outcome=%s lock_wait=%.3fs execution=%.3fs",
+                "Mower command %s: outcome=%s lock_wait=%.3fs execution=%.3fs "
+                "action=%s session=%s response_source=%s wire_result=%s",
                 command_name, outcome,
                 (acquired if acquired is not None else finished) - started,
                 finished - acquired if acquired is not None else 0.0,
+                self.action_id, session, trace["source"], trace["wire_result"],
             )
+            REQUEST_TRACE.reset(token)
 
     async def command(self, command_name, **kwargs):
         return await self._timed_command(super().command, command_name, **kwargs)
@@ -176,6 +190,13 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
     async def command_response(self, command_name, warn_on_error=True, **kwargs):
         return await self._timed_command(
             super().command_response, command_name, warn_on_error=warn_on_error, **kwargs
+        )
+
+    async def command_response_locked(self, command_name, warn_on_error=True, **kwargs):
+        """Trace action sequences too, retaining the same reentrant wire lock."""
+        return await self._timed_command(
+            super().command_response_locked, command_name,
+            warn_on_error=warn_on_error, **kwargs,
         )
 
     async def mower_next_start_time(self, timezone=None):
@@ -189,7 +210,8 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
             if self.is_connected():
                 return await super().connect(device)
             await self.disconnect()
-            self.connection_diagnostics = {"outcome": "connecting"}
+            self.session_id += 1
+            self.connection_diagnostics = {"outcome": "connecting", "session": self.session_id}
             self._connecting_task = asyncio.current_task()
             try:
                 # Bound the entire upstream handshake, including both pair()
@@ -220,7 +242,7 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
                 raise
             finally:
                 self._capture_connection_source()
-                _LOGGER.debug("Mower connection diagnostics: %s", self.connection_diagnostics)
+                _LOGGER.debug("Mower connection diagnostics: %s action=%s", self.connection_diagnostics, self.action_id)
                 self._connecting_task = None
                 if not self._session_ready:
                     await self.disconnect()
@@ -234,9 +256,26 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
             # The upstream request path flushes its queue. Match that for any
             # coalesced bytes retained by the event-aware frame reader too.
             self._event_frame_buffer.clear()
-            result = await super()._request_response_locked(request_data)
+            trace = REQUEST_TRACE.get()
+            if trace is not None and trace["mower"] is not self:
+                trace = None
+            if trace is not None:
+                trace["source"] = "awaiting_response"
+            try:
+                result = await super()._request_response_locked(request_data)
+            except BaseException as err:
+                if trace is not None:
+                    trace["source"] = type(err).__name__
+                raise
+            if trace is not None:
+                trace["source"] = "frame_received" if result is not None else "no_response"
+                # Same result-byte offset as upstream; not a claim of frame validity.
+                if result is not None and len(result) > 16:
+                    trace["wire_result"] = int(result[16])
             # Upstream consumes CancelledError; preserve HA timeouts/shutdown.
             if asyncio.current_task().cancelling():
+                if trace is not None:
+                    trace["source"] = "CancelledError"
                 raise asyncio.CancelledError
             return result
 
@@ -252,6 +291,7 @@ class Mower(EventMixin, ActionMixin, ScheduleMixin, UpstreamMower):
 
     async def disconnect(self):
         async with self.lock:
+            _LOGGER.debug("Mower disconnect cleanup action=%s session=%s", self.action_id, self.session_id)
             self._session_ready = False
             self._event_frame_buffer.clear()
             self.keep_alive_event.set()

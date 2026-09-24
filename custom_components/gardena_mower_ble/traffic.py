@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 
+from .tracing import trace_action
+
 BACKGROUND_READ = ContextVar("gardena_background_read", default=False)
 
 
@@ -31,7 +33,7 @@ def background_poll(method):
 def foreground_action(method):
     @wraps(method)
     async def wrapped(self, *args, **kwargs):
-        with foreground_read():
+        with foreground_read(), trace_action(self.coordinator.mower, method.__name__):
             async with self.coordinator.mower.lock.action_window():
                 return await method(self, *args, **kwargs)
     return wrapped

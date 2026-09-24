@@ -29,7 +29,26 @@ clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates th
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.9
+### Testing prerelease — v3.94.0-beta.10
+
+P0 manual Start now uses one departure observer, with five seconds before the
+first sample and between subsequent state/activity samples. The duplicate
+two-second confirmation probe is removed from this service path. Charging or a
+command acknowledgement alone is not reported as confirmed departure. Start
+remains bounded and is never automatically replayed after an uncertain outcome.
+
+New diagnostics capture the P0 pre-start mode, override, restriction and charging
+time. Local action/session counters and response provenance distinguish a mower
+error reply from a missing reply or timeout, without adding raw packet payloads.
+The existing Start/Dock writes, safety checks, non-service restoration behavior,
+Minimo Start/SpotCut, upstream dependency, blueprint and proxy firmware remain
+unchanged. This is a controlled compatibility test, **not a confirmed reboot fix**.
+
+Manifest: `3.94.0-beta.10`. Install through HACS and restart Home Assistant.
+Stable remains `v3.93`. Minimo regression testing comes first; no new City test
+request has been posted. See [release notes and test steps](docs/release-3.94.0-beta.10.md).
+
+### Previous prerelease — v3.94.0-beta.9
 
 Start and Dock now defer background polling and calendar reads while the command
 and its confirmation are in progress. Keep-alive and explicit user controls

@@ -14,7 +14,7 @@ PARK_POLL_SECONDS = 2
 
 
 class ActionMixin:
-    async def mower_override(self, duration_hours=3.0):
+    async def mower_override(self, duration_hours=3.0, *, confirm_trigger=True):
         """Match the app's timed-start sequence on the P0 platform."""
         if self.capabilities.platform != "P0":
             return await super().mower_override(duration_hours)
@@ -39,10 +39,10 @@ class ActionMixin:
                     raise
                 _LOGGER.debug("P0 timed start: %s result=%s elapsed=%.3fs", command, result.name, monotonic() - started)
                 if command == "StartTrigger":
-                    if result is ResponseResult.OK:
+                    if result is ResponseResult.OK or not confirm_trigger:
                         return result
-                    # Retain upstream's existing state confirmation/timing;
-                    # change only the command sequence in this experiment.
+                    # Non-service callers retain their previous confirmation.
+                    # P0 manual Start uses one observer in control.py instead.
                     return await self._start_trigger_result_locked(
                         result, "manual mowing",
                         (MowerActivity.GOING_OUT, MowerActivity.MOWING),
