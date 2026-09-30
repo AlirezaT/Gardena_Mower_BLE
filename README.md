@@ -21,15 +21,45 @@ communication.
 
 Mower communication is provided by the original
 [`alistair23/AutoMower-BLE`](https://github.com/alistair23/AutoMower-BLE)
-library, not a local fork or a PR branch. Version 3.90 retains upstream commit
+library, not a local fork or a PR branch. Version 3.94 retains upstream commit
 [`4bf4b009`](https://github.com/alistair23/AutoMower-BLE/commit/4bf4b00959f9ef712b5e1beebd725b0c75c80637),
 the latest upstream main revision checked on 2026-09-08. This includes the merged
 Gardena commands (PR #148), SILENO sense 600/650 model additions (PR #159), and
-clearer pairing diagnostics (PR #158). PyPI's latest `0.2.9` release predates these
+clearer pairing diagnostics (PR #158). The PyPI `0.2.9` release predates these
 changes. We pin a tested immutable revision for reproducible installations;
 updates to upstream main are not installed automatically.
 
-### Testing prerelease — v3.94.0-beta.10
+### Stable release — v3.94
+
+Promoted from `v3.94.0-beta.10` with **no runtime code changes**.
+Release tag: `v3.94`. Manifest version: `3.94`.
+
+- P0 timed Start follows the app command order and confirms departure without
+  automatically replaying an uncertain movement command.
+- Return Home defaults to **Until further notice**, with saved options for timed
+  parking or the next schedule. An empty onboard schedule falls back to indefinite
+  parking; a failed schedule read does not.
+- Calendar recovery preserves whole-second schedule times. Start/Dock confirmation
+  takes priority over background reads, and error-history reads yield between entries.
+- Reconnect rediscovery, optional-read backoff and action/session debug diagnostics
+  improve recovery and troubleshooting.
+
+The issue #11 reporter confirmed beta.10 automation working without reboots or
+unknown states on September 29. That is positive field feedback, not proof of a
+universal firmware-reboot fix or its root cause. See the
+[release notes, validation and limitations](docs/release-3.94.md).
+
+Install through HACS and restart Home Assistant. No forced re-pairing, blueprint
+re-import or proxy firmware update is required. Users already on beta.10 get the
+same behavior. Upstream dependencies and Minimo Start/SpotCut remain unchanged.
+
+### Prerelease history
+
+The sections below describe earlier testing milestones. Their references to
+the stable version and pending tests reflect the time each beta was published;
+the current stable release is **v3.94**.
+
+### Previous prerelease — v3.94.0-beta.10
 
 P0 manual Start now uses one departure observer, with five seconds before the
 first sample and between subsequent state/activity samples. The duplicate
