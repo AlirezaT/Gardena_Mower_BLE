@@ -556,6 +556,14 @@ low growth estimate from defeating the configured minimum and postponing the
 next session unnecessarily. It is a budget target, not a guarantee: rain,
 excluded days, available dry windows and mower limits can still reduce mowing.
 
+When this blueprint controls mowing, remove conflicting schedules stored on the
+mower and select its **Park Until Further Notice** switch in the blueprint.
+Outside-hours enforcement is enabled by default: the end of the window is a
+mowing cutoff, including for manually or internally started runs. The guard
+checks every minute and on mowing starts/startup; it requires HA and BLE to be
+available. See [mowing-window safety and setup](docs/mowing-window-safety.md)
+for generic-mower behavior, limitations and the opt-out.
+
 Inputs include:
 
 - weather entity with hourly forecast; rainy-days reporting also uses the
@@ -570,6 +578,7 @@ Inputs include:
 - minimum and maximum session length
 - excluded mowing weekdays; weekly mowing need is spread over the remaining days
 - allowed mowing time window, either fixed or relative to sunrise/sunset
+- outside-hours parking enforcement and an optional permanent-park switch
 - rain forecast thresholds
 - optional measured rainfall and irrigation totals, their shared lookback
   period, and optional soil moisture for water-aware growth estimates
@@ -690,7 +699,7 @@ Monitoring features:
 Import URL:
 
 ```text
-https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/main/blueprints/automation/gardena_smart_mowing.yaml
+https://raw.githubusercontent.com/AlirezaT/Gardena_Mower_BLE/release/3.94/blueprints/automation/gardena_smart_mowing.yaml
 ```
 
 ## Supported Controls

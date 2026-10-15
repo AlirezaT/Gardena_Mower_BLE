@@ -10,7 +10,7 @@ blueprint:
     the grass should be dry enough. Designed for Gardena Mower BLE, but generic
     enough for any lawn_mower entity with a manual duration number.
   domain: automation
-  source_url: https://github.com/AlirezaT/Gardena_Mower_BLE/blob/v3.92.0-beta.4/blueprints/automation/gardena_smart_mowing.yaml
+  source_url: https://github.com/AlirezaT/Gardena_Mower_BLE/blob/release/3.94/blueprints/automation/gardena_smart_mowing.yaml
   input:
     mower_entity:
       name: Mower
@@ -18,6 +18,28 @@ blueprint:
       selector:
         entity:
           domain: lawn_mower
+    permanent_park_switch:
+      name: Park until further notice switch
+      description: >-
+        For Gardena BLE, select this mower's Park Until Further Notice switch.
+        Outside the allowed window or on excluded days it holds the mower parked,
+        independently of the Return Home preference. Without it, the guard uses
+        lawn_mower.dock for a mowing mower; configure that action to park indefinitely.
+        Clear conflicting onboard schedules separately when using this planner.
+      default: ""
+      selector:
+        entity:
+          domain: switch
+    enforce_mowing_window:
+      name: Park outside allowed mowing hours
+      description: >-
+        Also stops manually or internally scheduled runs outside the window and
+        on excluded weekdays. Checked on mowing starts, HA startup and every minute.
+        Requires HA and the mower connection to be available. Disable only if you
+        intentionally want the window to limit automatic starts, not ongoing mowing.
+      default: true
+      selector:
+        boolean:
     manual_duration_number:
       name: Manual mowing duration number
       description: Number entity that controls manual mowing duration in hours.
@@ -394,7 +416,7 @@ blueprint:
       selector:
         time:
     allowed_end_time:
-      name: Latest mowing start
+      name: End of allowed mowing window
       description: Used when the end reference is Fixed time.
       default: "18:00:00"
       selector:
@@ -421,7 +443,7 @@ blueprint:
           unit_of_measurement: min
           mode: box
     allowed_end_reference:
-      name: Latest mowing start reference
+      name: End of allowed mowing window reference
       description: Choose whether the mowing window ends at a fixed time, sunrise, or sunset.
       default: Fixed time
       selector:
@@ -431,7 +453,7 @@ blueprint:
             - Sunrise
             - Sunset
     allowed_end_sun_offset_minutes:
-      name: Latest mowing start sun offset
+      name: End of allowed mowing window sun offset
       description: Minutes added to the sunrise/sunset end reference. Use negative values to finish before it.
       default: -60
       selector:
@@ -758,6 +780,12 @@ max_exceeded: silent
 
 trigger:
   - platform: time_pattern
+    id: window_guard
+    minutes: "/1"
+  - platform: homeassistant
+    id: window_guard
+    event: start
+  - platform: time_pattern
     id: schedule_check
     minutes: !input check_minutes_pattern
   - platform: state
@@ -800,6 +828,8 @@ trigger:
 
 variables:
   mower_entity: !input mower_entity
+  permanent_park_switch: !input permanent_park_switch
+  enforce_mowing_window: !input enforce_mowing_window
   manual_duration_number: !input manual_duration_number
   weather_entity: !input weather_entity
   last_rain_helper: !input last_rain_helper
@@ -1206,7 +1236,7 @@ variables:
     {% else %}
       {{ (168 / (calculated_sessions_per_week | int(1))) | round(1) }}
     {% endif %}
-  today_sunrise_ts: >-
+  today_sunrise_ts: &today_sunrise_ts >-
     {% set next_rising = as_timestamp(state_attr('sun.sun', 'next_rising'), none) %}
     {% set today_start = as_timestamp(today_at('00:00:00')) %}
     {% set tomorrow_start = as_timestamp(today_at('00:00:00') + timedelta(days=1)) %}
@@ -1217,7 +1247,7 @@ variables:
     {% else %}
       {{ next_rising - 86400 }}
     {% endif %}
-  today_sunset_ts: >-
+  today_sunset_ts: &today_sunset_ts >-
     {% set next_setting = as_timestamp(state_attr('sun.sun', 'next_setting'), none) %}
     {% set today_start = as_timestamp(today_at('00:00:00')) %}
     {% set tomorrow_start = as_timestamp(today_at('00:00:00') + timedelta(days=1)) %}
@@ -1255,7 +1285,7 @@ variables:
     {{ now_ts < dew_dry_ts | float(0)
        or (now_ts >= today_sunset_ts | float(0)
            and outdoor_humidity | float(0) >= dew_humidity_threshold | float(85)) }}
-  allowed_start_ts: >-
+  allowed_start_ts: &allowed_start_ts >-
     {% if allowed_start_reference == 'Sunrise' %}
       {{ today_sunrise_ts | float(0) + allowed_start_sun_offset_minutes | float(0) * 60 }}
     {% elif allowed_start_reference == 'Sunset' %}
@@ -1263,7 +1293,7 @@ variables:
     {% else %}
       {{ as_timestamp(today_at(allowed_start_time)) }}
     {% endif %}
-  allowed_end_ts: >-
+  allowed_end_ts: &allowed_end_ts >-
     {% if allowed_end_reference == 'Sunrise' %}
       {{ today_sunrise_ts | float(0) + allowed_end_sun_offset_minutes | float(0) * 60 }}
     {% elif allowed_end_reference == 'Sunset' %}
@@ -1271,16 +1301,19 @@ variables:
     {% else %}
       {{ as_timestamp(today_at(allowed_end_time)) }}
     {% endif %}
-  within_allowed_time: >-
+  within_allowed_time: &within_allowed_time >-
     {% set start = allowed_start_ts | float(0) %}
     {% set end = allowed_end_ts | float(0) %}
     {% set now_ts = as_timestamp(now()) %}
-    {% if start <= end %}
-      {{ start <= now_ts <= end }}
+    {% if start < end %}
+      {{ start <= now_ts < end }}
+    {% elif start > end and allowed_start_reference == 'Fixed time'
+        and allowed_end_reference == 'Fixed time' %}
+      {{ now_ts >= start or now_ts < end }}
     {% else %}
-      {{ now_ts >= start or now_ts <= end }}
+      {{ false }}
     {% endif %}
-  allowed_weekday_today: >-
+  allowed_weekday_today: &allowed_weekday_today >-
     {% set excluded = excluded_mowing_weekdays
       if excluded_mowing_weekdays is iterable and excluded_mowing_weekdays is not string
       else [excluded_mowing_weekdays] %}
@@ -1374,6 +1407,43 @@ variables:
            and blade_hours_since_change | float(0) >= blade_change_interval_cutting_hours | float(60)) }}
 
 action:
+  # Queued runs must evaluate today's window when they execute, not when queued.
+  - variables: &refresh_mowing_window
+      today_sunrise_ts: *today_sunrise_ts
+      today_sunset_ts: *today_sunset_ts
+      allowed_start_ts: *allowed_start_ts
+      allowed_end_ts: *allowed_end_ts
+      within_allowed_time: *within_allowed_time
+      allowed_weekday_today: *allowed_weekday_today
+  # Run before weather requests and before mowing_started's bookkeeping/stop.
+  # Never resume the onboard schedule by turning the permanent park switch off:
+  # a later explicit start_mowing_for command releases the hold when safe.
+  - choose:
+      - conditions: >-
+          {{ enforce_mowing_window | bool
+             and (not within_allowed_time | bool or not allowed_weekday_today | bool)
+             and states(mower_entity) in ['mowing', 'returning', 'docked', 'paused', 'idle'] }}
+        sequence:
+          - choose:
+              - conditions: "{{ permanent_park_switch | length > 0 }}"
+                sequence:
+                  - choose:
+                      - conditions: "{{ not is_state(permanent_park_switch, 'on') }}"
+                        sequence:
+                          - action: switch.turn_on
+                            target:
+                              entity_id: "{{ permanent_park_switch }}"
+            default:
+              - choose:
+                  - conditions: "{{ is_state(mower_entity, 'mowing') }}"
+                    sequence:
+                      - action: lawn_mower.dock
+                        target:
+                          entity_id: !input mower_entity
+  - choose:
+      - conditions: "{{ trigger.id == 'window_guard' }}"
+        sequence:
+          - stop: Mowing window guard checked; no scheduling or start command.
   - choose:
       - conditions: "{{ trigger.id == 'manual_watering' }}"
         sequence:
@@ -2183,7 +2253,8 @@ action:
           - action: lawn_mower.dock
             target:
               entity_id: !input mower_entity
-          - delay:
+          - wait_template: "{{ states(mower_entity) != 'mowing' }}"
+            timeout:
               minutes: !input command_response_delay_minutes
           - choose:
               - conditions: "{{ states(mower_entity) == 'mowing' }}"
@@ -2191,7 +2262,8 @@ action:
                   - action: lawn_mower.dock
                     target:
                       entity_id: !input mower_entity
-                  - delay:
+                  - wait_template: "{{ states(mower_entity) != 'mowing' }}"
+                    timeout:
                       minutes: !input command_response_delay_minutes
                   - condition: template
                     value_template: "{{ states(mower_entity) == 'mowing' }}"
@@ -2236,8 +2308,12 @@ action:
                         Mowing has been blocked by wet weather/grass for
                         {{ (last_mow_age_hours | float(0) / 24) | round(1) }} days.
 
+  - variables: *refresh_mowing_window
   - condition: template
-    value_template: "{{ safe_to_mow | bool }}"
+    value_template: >-
+      {{ safe_to_mow | bool and within_allowed_time | bool
+         and allowed_weekday_today | bool
+         and states(mower_entity) not in ['mowing', 'returning', 'error', 'unavailable', 'unknown'] }}
 
   - variables:
       auto_start_cutting_minutes: "{{ current_cutting_minutes | float(0) }}"
@@ -2260,7 +2336,8 @@ action:
         target:
           entity_id: !input mower_entity
 
-  - delay:
+  - wait_template: "{{ is_state(mower_entity, 'mowing') }}"
+    timeout:
       minutes: !input command_response_delay_minutes
 
   - choose:
