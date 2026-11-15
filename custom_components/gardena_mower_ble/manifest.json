@@ -16,7 +16,7 @@
   "iot_class": "local_polling",
   "requirements": [
     "automower-ble @ https://github.com/alistair23/AutoMower-BLE/archive/4bf4b00959f9ef712b5e1beebd725b0c75c80637.tar.gz",
-    "gardena-bluetooth==2.8.1"
+    "gardena-bluetooth>=2.10.1"
   ],
   "version": "3.08"
 }
